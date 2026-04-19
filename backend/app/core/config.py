@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from typing import Literal
+from typing import Literal, Optional
 
 
 class Settings(BaseSettings):
@@ -10,7 +10,10 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = "postgresql://postgres:haru@localhost:5432/jobhunt"
 
+    # ── AI Provider ─────────────────────────────────────────
+    AI_PROVIDER: Literal["claude", "gemini"] = "claude"  # switch between providers
     ANTHROPIC_API_KEY: str = ""
+    GOOGLE_API_KEY: str = ""
 
     REDIS_URL: str = "redis://localhost:6379/0"
 

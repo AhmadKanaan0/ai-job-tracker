@@ -1,25 +1,51 @@
 """
-AI Service — all Claude API calls in one place.
-Prompts are adapted from career-ops' battle-tested 6-block evaluation.
+AI Service — all AI API calls in one place.
+Supports both Claude (Anthropic) and Gemini (Google) as providers.
+Set AI_PROVIDER in .env to "claude" or "gemini" to switch.
 """
 import json
 import re
-from anthropic import Anthropic
 from app.core.config import settings
 
-client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-MODEL = "claude-sonnet-4-20250514"
+# ── Provider setup ───────────────────────────────────────────────────────────
 
+_provider = settings.AI_PROVIDER  # "claude" or "gemini"
+
+if _provider == "claude":
+    from anthropic import Anthropic
+    _claude_client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+    _CLAUDE_MODEL = "claude-sonnet-4-20250514"
+elif _provider == "gemini":
+    from google import genai
+    _gemini_client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+    _GEMINI_MODEL = "gemini-3.1-pro"
+else:
+    raise ValueError(f"Unknown AI_PROVIDER: {_provider!r}. Must be 'claude' or 'gemini'.")
+
+
+# ── Low-level helpers ────────────────────────────────────────────────────────
 
 def _ask(system: str, user: str, max_tokens: int = 2000) -> str:
-    """Low-level helper — send a single prompt, return text."""
-    msg = client.messages.create(
-        model=MODEL,
-        max_tokens=max_tokens,
-        system=system,
-        messages=[{"role": "user", "content": user}],
-    )
-    return msg.content[0].text
+    """Send a single prompt to the configured AI provider and return text."""
+    if _provider == "claude":
+        msg = _claude_client.messages.create(
+            model=_CLAUDE_MODEL,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+        return msg.content[0].text
+
+    else:  # gemini
+        response = _gemini_client.models.generate_content(
+            model=_GEMINI_MODEL,
+            contents=f"{system}\n\n{user}",
+            config={
+                "max_output_tokens": max_tokens,
+                "temperature": 0.3,
+            },
+        )
+        return response.text
 
 
 def _parse_json(text: str) -> dict:

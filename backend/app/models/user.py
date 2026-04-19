@@ -1,0 +1,41 @@
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, func, JSON
+from sqlalchemy.orm import relationship
+from app.core.database import Base
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    full_name = Column(String, nullable=True)
+    first_name = Column(String, nullable=True)
+    last_name = Column(String, nullable=True)
+    hashed_password = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True)
+    
+    # Personal Info
+    phone = Column(String, nullable=True)
+    country = Column(String, nullable=True)
+    city = Column(String, nullable=True)
+    county = Column(String, nullable=True)
+    postal_code = Column(String, nullable=True)
+    address_line = Column(String, nullable=True)
+
+    # Setup Wizard Data
+    educations = Column(JSON, nullable=True)
+    experiences = Column(JSON, nullable=True)
+    skills = Column(JSON, nullable=True)
+
+    # Equal Employment
+    has_disability = Column(String, nullable=True)
+    gender = Column(String, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # relationships
+    cvs = relationship("CV", back_populates="owner", cascade="all, delete-orphan")
+    tracked_jobs = relationship("TrackedJob", back_populates="owner", cascade="all, delete-orphan")
+    cover_letters = relationship("CoverLetter", back_populates="owner", cascade="all, delete-orphan")
+    analyses = relationship("JobAnalysis", back_populates="owner", cascade="all, delete-orphan")

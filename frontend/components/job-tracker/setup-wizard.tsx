@@ -1,7 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { useAuth } from "@/lib/auth-context"
+import { Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -75,7 +77,40 @@ const aiMessages = {
 
 export function SetupWizard() {
   const router = useRouter()
-  const onComplete = () => router.push("/dashboard")
+  const { user, updateProfile, isAuthenticated, isLoading: authLoading } = useAuth()
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  // Redirect if not logged in
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) router.push("/auth")
+  }, [authLoading, isAuthenticated, router])
+
+  const onComplete = async () => {
+    setIsSaving(true)
+    setSaveError(null)
+    try {
+      await updateProfile({
+        first_name: personal.firstName || undefined,
+        last_name: personal.lastName || undefined,
+        phone: personal.phone || undefined,
+        country: personal.country || undefined,
+        city: personal.city || undefined,
+        county: personal.county || undefined,
+        postal_code: personal.postalCode || undefined,
+        address_line: personal.addressLine || undefined,
+        educations: educations.map(({ id, ...rest }) => rest),
+        experiences: experiences.map(({ id, ...rest }) => rest),
+        skills,
+        has_disability: equalEmployment.hasDisability || undefined,
+        gender: equalEmployment.gender || undefined,
+      })
+      router.push("/dashboard")
+    } catch (err) {
+      setSaveError((err as Error).message || "Failed to save profile")
+      setIsSaving(false)
+    }
+  }
   const [step, setStep] = useState(1)
   
   // Personal Info
@@ -110,6 +145,49 @@ export function SetupWizard() {
     hasDisability: "",
     gender: ""
   })
+
+  // Sync state when user is loaded (only for initial load or if fields are empty)
+  const [hasSynced, setHasSynced] = useState(false)
+
+  useEffect(() => {
+    if (user && !hasSynced) {
+      setPersonal(prev => ({
+        ...prev,
+        firstName: prev.firstName || user.first_name || "",
+        lastName: prev.lastName || user.last_name || "",
+        email: prev.email || user.email || "",
+        phone: prev.phone || user.phone || "",
+        country: prev.country || user.country || "",
+        city: prev.city || user.city || "",
+        county: prev.county || user.county || "",
+        postalCode: prev.postalCode || user.postal_code || "",
+        addressLine: prev.addressLine || user.address_line || ""
+      }))
+
+      if (user.educations?.length && educations.every(e => !e.schoolName)) {
+        setEducations(user.educations.map((e, i) => ({ id: i + 1, ...e })))
+      }
+
+      if (user.experiences?.length && experiences.every(e => !e.jobTitle)) {
+        setExperiences(user.experiences.map((e, i) => ({ id: i + 1, jobType: "Full-time", ...e })))
+      }
+
+      if (user.skills?.length && skills.length <= 5 && skills.includes("React")) {
+        // Only replace default skills
+        setSkills(user.skills)
+      }
+      
+      setHasSynced(true)
+    }
+  }, [user, hasSynced, educations, experiences, skills])
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-10 h-10 animate-spin text-primary" />
+      </div>
+    )
+  }
 
   // Resume upload
   const [resumeUploaded, setResumeUploaded] = useState(false)
@@ -836,10 +914,18 @@ export function SetupWizard() {
           )}
           <Button 
             onClick={handleNext}
+            disabled={isSaving}
             className="bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-[0_0_15px_rgba(223,255,0,0.4)] transition-all px-12 py-6 text-lg rounded-full"
           >
-            {step === 5 ? 'Start Matching' : 'Next'}
+            {isSaving ? (
+              <><Loader2 className="w-5 h-5 mr-2 animate-spin" />Saving...</>
+            ) : (
+              step === 5 ? 'Start Matching' : 'Next'
+            )}
           </Button>
+          {saveError && (
+            <p className="text-destructive text-sm mt-3">{saveError}</p>
+          )}
         </div>
       </div>
     </div>

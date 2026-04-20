@@ -1,20 +1,50 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Github, Mail, Zap, Eye, EyeOff } from "lucide-react"
+import { Github, Mail, Zap, Eye, EyeOff, Loader2 } from "lucide-react"
+import { useAuth } from "@/lib/auth-context"
+import { ApiError } from "@/lib/api-client"
 
 export function OnboardingAuth() {
   const router = useRouter()
-  const onContinue = () => router.push("/onboarding")
+  const { login, register } = useAuth()
   const [isSignUp, setIsSignUp] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [fullName, setFullName] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [isMounted, setIsMounted] = useState(false)
+
+  useEffect(() => { setIsMounted(true) }, [])
+
+  const handleSubmit = async () => {
+    setError(null)
+    setIsLoading(true)
+
+    try {
+      if (isSignUp) {
+        await register({ email, password, full_name: fullName || undefined })
+      } else {
+        await login({ email, password })
+      }
+      router.push("/onboarding")
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.detail)
+      } else {
+        setError("Something went wrong. Please try again.")
+      }
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -42,7 +72,7 @@ export function OnboardingAuth() {
             <Button 
               variant="outline" 
               className="h-11 border-border/50 bg-muted/30 hover:bg-muted/50 text-foreground"
-              onClick={onContinue}
+              disabled
             >
               <Github className="w-5 h-5 mr-2" />
               GitHub
@@ -50,7 +80,7 @@ export function OnboardingAuth() {
             <Button 
               variant="outline" 
               className="h-11 border-border/50 bg-muted/30 hover:bg-muted/50 text-foreground"
-              onClick={onContinue}
+              disabled
             >
               <Mail className="w-5 h-5 mr-2" />
               Google
@@ -67,8 +97,29 @@ export function OnboardingAuth() {
             </div>
           </div>
 
+          {/* Error Message */}
+          {error && (
+            <div className="mb-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
+              {error}
+            </div>
+          )}
+
           {/* Email/Password Form */}
           <div className="space-y-4">
+            {isSignUp && (
+              <div className="space-y-2">
+                <Label className="text-foreground">Full Name</Label>
+                <Input 
+                  type="text"
+                  placeholder="John Doe"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="bg-muted/50 border-border/50 h-11"
+                  disabled={isLoading}
+                />
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label className="text-foreground">Email</Label>
               <Input 
@@ -77,6 +128,7 @@ export function OnboardingAuth() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="bg-muted/50 border-border/50 h-11"
+                disabled={isLoading}
               />
             </div>
 
@@ -89,6 +141,8 @@ export function OnboardingAuth() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="bg-muted/50 border-border/50 h-11 pr-10"
+                  disabled={isLoading}
+                  onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
                 />
                 <button
                   type="button"
@@ -112,9 +166,17 @@ export function OnboardingAuth() {
 
             <Button 
               className="w-full h-12 bg-primary text-primary-foreground hover:bg-primary/90 text-base font-medium"
-              onClick={onContinue}
+              onClick={handleSubmit}
+              disabled={isLoading || (isMounted && (!email || !password))}
             >
-              {isSignUp ? "Create Account" : "Sign In"}
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  {isSignUp ? "Creating Account..." : "Signing In..."}
+                </>
+              ) : (
+                isSignUp ? "Create Account" : "Sign In"
+              )}
             </Button>
           </div>
 
@@ -124,7 +186,7 @@ export function OnboardingAuth() {
               {isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}
               <button 
                 className="text-primary hover:underline font-medium"
-                onClick={() => setIsSignUp(!isSignUp)}
+                onClick={() => { setIsSignUp(!isSignUp); setError(null); }}
               >
                 {isSignUp ? "Sign In" : "Sign Up"}
               </button>

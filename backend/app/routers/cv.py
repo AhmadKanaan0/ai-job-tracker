@@ -53,22 +53,25 @@ async def upload_cv(
     # Extract profile data and update user
     try:
         profile_data = ai_service.extract_profile_from_cv(parsed_text)
-        if profile_data.get("first_name"):
-            current_user.first_name = profile_data["first_name"]
-        if profile_data.get("last_name"):
-            current_user.last_name = profile_data["last_name"]
-        if profile_data.get("phone"):
-            current_user.phone = profile_data["phone"]
-        if profile_data.get("country"):
-            current_user.country = profile_data["country"]
-        if profile_data.get("city"):
-            current_user.city = profile_data["city"]
+        
+        # Simple string fields
+        fields = ["first_name", "last_name", "phone", "country", "city"]
+        for field in fields:
+            if profile_data.get(field):
+                setattr(current_user, field, profile_data[field])
+        
+        # Complex JSON fields
         if profile_data.get("educations"):
             current_user.educations = profile_data["educations"]
         if profile_data.get("experiences"):
             current_user.experiences = profile_data["experiences"]
         if profile_data.get("skills"):
             current_user.skills = profile_data["skills"]
+            
+        # Update full_name if possible
+        if profile_data.get("first_name") and profile_data.get("last_name"):
+            current_user.full_name = f"{profile_data['first_name']} {profile_data['last_name']}"
+            
     except Exception as e:
         # Ignore extraction failures, CV is still uploaded
         print(f"Failed to extract profile data from CV: {e}")

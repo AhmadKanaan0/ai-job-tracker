@@ -11,16 +11,33 @@ from app.core.config import settings
 
 _provider = settings.AI_PROVIDER  # "claude" or "gemini"
 
-if _provider == "claude":
-    from anthropic import Anthropic
-    _claude_client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-    _CLAUDE_MODEL = "claude-sonnet-4-20250514"
-elif _provider == "gemini":
-    from google import genai
-    _gemini_client = genai.Client(api_key=settings.GOOGLE_API_KEY)
-    _GEMINI_MODEL = "gemini-3.1-pro"
-else:
-    raise ValueError(f"Unknown AI_PROVIDER: {_provider!r}. Must be 'claude' or 'gemini'.")
+# Lazy-init: clients are created on first call, not at import time.
+# This avoids crashes if the unused provider's SDK isn't installed.
+_claude_client = None
+_gemini_client = None
+_CLAUDE_MODEL = "claude-sonnet-4-20250514"
+_GEMINI_MODEL = "gemini-3-flash-preview"
+
+
+def _get_claude():
+    global _claude_client
+    if _claude_client is None:
+        from anthropic import Anthropic
+        _claude_client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+    return _claude_client
+
+
+def _get_gemini():
+    global _gemini_client
+    if _gemini_client is None:
+        try:
+            from google import genai
+        except ImportError:
+            raise ImportError(
+                "google-genai is not installed. Run: pip install google-genai"
+            )
+        _gemini_client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+    return _gemini_client
 
 
 # ── Low-level helpers ────────────────────────────────────────────────────────
@@ -28,7 +45,7 @@ else:
 def _ask(system: str, user: str, max_tokens: int = 2000) -> str:
     """Send a single prompt to the configured AI provider and return text."""
     if _provider == "claude":
-        msg = _claude_client.messages.create(
+        msg = _get_claude().messages.create(
             model=_CLAUDE_MODEL,
             max_tokens=max_tokens,
             system=system,
@@ -37,7 +54,7 @@ def _ask(system: str, user: str, max_tokens: int = 2000) -> str:
         return msg.content[0].text
 
     else:  # gemini
-        response = _gemini_client.models.generate_content(
+        response = _get_gemini().models.generate_content(
             model=_GEMINI_MODEL,
             contents=f"{system}\n\n{user}",
             config={

@@ -15,6 +15,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { 
@@ -23,41 +32,44 @@ import {
   Trash2,
   Upload,
   FileText,
-  Check
+  Check,
+  User as UserIcon,
+  GraduationCap,
+  Briefcase,
+  Wrench,
+  ShieldCheck,
+  ChevronRight,
+  ChevronLeft,
+  Sparkles,
+  ChevronsUpDown,
+  Search,
+  AlertCircle
 } from "lucide-react"
+import { useForm, useFieldArray } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import * as z from "zod"
+import { DatePicker } from "@/components/ui/date-picker"
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form"
+import { cn } from "@/lib/utils"
 
 // interface removed
 
-interface Education {
-  id: number
-  schoolName: string
-  major: string
-  degreeType: string
-  gpa: string
-  startDate: string
-  endDate: string
-  currentlyStudying: boolean
-}
-
-interface WorkExperience {
-  id: number
-  jobTitle: string
-  company: string
-  jobType: string
-  location: string
-  startDate: string
-  endDate: string
-  currentlyWorking: boolean
-  summary: string
-  descriptions: string[]
-}
+// Interfaces removed in favor of Zod schema types
 
 const steps = [
-  { number: 1, label: "Personal" },
-  { number: 2, label: "Education" },
-  { number: 3, label: "Work Experience" },
-  { number: 4, label: "Skills" },
-  { number: 5, label: "Equal Employment" },
+  { number: 1, label: "Personal", icon: UserIcon },
+  { number: 2, label: "Education", icon: GraduationCap },
+  { number: 3, label: "Work Experience", icon: Briefcase },
+  { number: 4, label: "Skills", icon: Wrench },
+  { number: 5, label: "Equal Employment", icon: ShieldCheck },
 ]
 
 const suggestedSkills = [
@@ -75,35 +87,75 @@ const aiMessages = {
   5: "Last step! Share your equal employment info for a faster application process."
 }
 
+const setupSchema = z.object({
+  personal: z.object({
+    firstName: z.string().min(1, "First name is required"),
+    lastName: z.string().min(1, "Last name is required"),
+    email: z.string().email("Invalid email"),
+    phone: z.string().optional(),
+    country: z.string().min(1, "Country is required"),
+    city: z.string().min(1, "City is required"),
+    county: z.string().optional(),
+    postalCode: z.string().optional(),
+    addressLine: z.string().optional(),
+  }),
+  educations: z.array(z.object({
+    schoolName: z.string().min(1, "School name is required"),
+    major: z.string().min(1, "Major is required"),
+    degreeType: z.string().min(1, "Degree type is required"),
+    gpa: z.string().optional(),
+    startDate: z.string().min(1, "Start date is required"),
+    endDate: z.string().optional(),
+    currentlyStudying: z.boolean().default(false),
+  })),
+  experiences: z.array(z.object({
+    jobTitle: z.string().min(1, "Job title is required"),
+    company: z.string().min(1, "Company is required"),
+    jobType: z.string().default("Full-time"),
+    location: z.string().optional(),
+    startDate: z.string().min(1, "Start date is required"),
+    endDate: z.string().optional(),
+    currentlyWorking: z.boolean().default(false),
+    summary: z.string().optional(),
+    descriptions: z.array(z.string()).default([""]),
+  })),
+  skills: z.array(z.string()).min(1, "At least one skill is required"),
+  equalEmployment: z.object({
+    hasDisability: z.string().optional(),
+    gender: z.string().optional(),
+  }),
+})
+
+type SetupFormValues = z.infer<typeof setupSchema>
+
 export function SetupWizard() {
   const router = useRouter()
   const { user, updateProfile, isAuthenticated, isLoading: authLoading } = useAuth()
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [countries, setCountries] = useState<string[]>([])
+  const [isLoadingCountries, setIsLoadingCountries] = useState(true)
 
-  // Redirect if not logged in
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated) router.push("/auth")
-  }, [authLoading, isAuthenticated, router])
 
-  const onComplete = async () => {
+  const onComplete = async (values: SetupFormValues) => {
     setIsSaving(true)
     setSaveError(null)
     try {
       await updateProfile({
-        first_name: personal.firstName || undefined,
-        last_name: personal.lastName || undefined,
-        phone: personal.phone || undefined,
-        country: personal.country || undefined,
-        city: personal.city || undefined,
-        county: personal.county || undefined,
-        postal_code: personal.postalCode || undefined,
-        address_line: personal.addressLine || undefined,
-        educations: educations.map(({ id, ...rest }) => rest),
-        experiences: experiences.map(({ id, ...rest }) => rest),
-        skills,
-        has_disability: equalEmployment.hasDisability || undefined,
-        gender: equalEmployment.gender || undefined,
+        first_name: values.personal.firstName,
+        last_name: values.personal.lastName,
+        phone: values.personal.phone || undefined,
+        country: values.personal.country,
+        city: values.personal.city,
+        county: values.personal.county || undefined,
+        postal_code: values.personal.postalCode || undefined,
+        address_line: values.personal.addressLine || undefined,
+        educations: values.educations,
+        experiences: values.experiences,
+        skills: values.skills,
+        has_disability: values.equalEmployment.hasDisability || undefined,
+        gender: values.equalEmployment.gender || undefined,
+        setup_completed: true,
       })
       router.push("/dashboard")
     } catch (err) {
@@ -111,39 +163,76 @@ export function SetupWizard() {
       setIsSaving(false)
     }
   }
+
+  // Redirect if not logged in or already completed
+  useEffect(() => {
+    if (!authLoading) {
+      if (!isAuthenticated) {
+        router.push("/auth")
+      } else if (user?.setup_completed) {
+        router.push("/dashboard")
+      } else if (!user?.has_cv) {
+        router.push("/onboarding")
+      }
+    }
+  }, [authLoading, isAuthenticated, user, router])
+  
   const [step, setStep] = useState(1)
   
-  // Personal Info
-  const [personal, setPersonal] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    phone: "",
-    country: "",
-    city: "",
-    county: "",
-    postalCode: "",
-    addressLine: ""
+  const form = useForm<SetupFormValues>({
+    resolver: zodResolver(setupSchema),
+    defaultValues: {
+      personal: {
+        firstName: user?.first_name || "",
+        lastName: user?.last_name || "",
+        email: user?.email || "",
+        phone: user?.phone || "",
+        country: user?.country || "",
+        city: user?.city || "",
+        county: user?.county || "",
+        postalCode: user?.postal_code || "",
+        addressLine: user?.address_line || "",
+      },
+      educations: user?.educations?.length 
+        ? user.educations.map(e => ({
+            schoolName: e.schoolName || "",
+            major: e.major || "",
+            degreeType: e.degreeType || "",
+            gpa: e.gpa || "",
+            startDate: e.startDate || "",
+            endDate: e.endDate || "",
+            currentlyStudying: !!e.currentlyStudying,
+          }))
+        : [{ schoolName: "", major: "", degreeType: "", gpa: "", startDate: "", endDate: "", currentlyStudying: false }],
+      experiences: user?.experiences?.length
+        ? user.experiences.map(e => ({
+            jobTitle: e.jobTitle || "",
+            company: e.company || "",
+            jobType: e.jobType || "Full-time",
+            location: e.location || "",
+            startDate: e.startDate || "",
+            endDate: e.endDate || "",
+            currentlyWorking: !!e.currentlyWorking,
+            summary: e.summary || "",
+            descriptions: e.descriptions?.length ? e.descriptions : [""],
+          }))
+        : [{ jobTitle: "", company: "", jobType: "Full-time", location: "", startDate: "", endDate: "", currentlyWorking: false, summary: "", descriptions: [""] }],
+      skills: user?.skills?.length ? user.skills : ["React", "TypeScript", "Node.js", "Docker", "PostgreSQL"],
+      equalEmployment: {
+        hasDisability: user?.has_disability || "",
+        gender: user?.gender || "",
+      }
+    }
   })
 
-  // Education
-  const [educations, setEducations] = useState<Education[]>([
-    { id: 1, schoolName: "", major: "", degreeType: "", gpa: "", startDate: "", endDate: "", currentlyStudying: false }
-  ])
+  const { fields: educationFields, append: appendEducation, remove: removeEducation } = useFieldArray({
+    control: form.control,
+    name: "educations",
+  })
 
-  // Work Experience
-  const [experiences, setExperiences] = useState<WorkExperience[]>([
-    { id: 1, jobTitle: "", company: "", jobType: "Full-time", location: "", startDate: "", endDate: "", currentlyWorking: false, summary: "", descriptions: [""] }
-  ])
-
-  // Skills
-  const [skills, setSkills] = useState<string[]>(["React", "TypeScript", "Node.js", "Docker", "PostgreSQL"])
-  const [newSkill, setNewSkill] = useState("")
-
-  // Equal Employment
-  const [equalEmployment, setEqualEmployment] = useState({
-    hasDisability: "",
-    gender: ""
+  const { fields: experienceFields, append: appendExperience, remove: removeExperience } = useFieldArray({
+    control: form.control,
+    name: "experiences",
   })
 
   // Sync state when user is loaded (only for initial load or if fields are empty)
@@ -151,37 +240,80 @@ export function SetupWizard() {
 
   useEffect(() => {
     if (user && !hasSynced) {
-      setPersonal(prev => ({
-        ...prev,
-        firstName: prev.firstName || user.first_name || "",
-        lastName: prev.lastName || user.last_name || "",
-        email: prev.email || user.email || "",
-        phone: prev.phone || user.phone || "",
-        country: prev.country || user.country || "",
-        city: prev.city || user.city || "",
-        county: prev.county || user.county || "",
-        postalCode: prev.postalCode || user.postal_code || "",
-        addressLine: prev.addressLine || user.address_line || ""
-      }))
-
-      if (user.educations?.length && educations.every(e => !e.schoolName)) {
-        setEducations(user.educations.map((e, i) => ({ id: i + 1, ...e })))
-      }
-
-      if (user.experiences?.length && experiences.every(e => !e.jobTitle)) {
-        setExperiences(user.experiences.map((e, i) => ({ id: i + 1, jobType: "Full-time", ...e })))
-      }
-
-      if (user.skills?.length && skills.length <= 5 && skills.includes("React")) {
-        // Only replace default skills
-        setSkills(user.skills)
-      }
-      
+      form.reset({
+        personal: {
+          firstName: user.first_name || "",
+          lastName: user.last_name || "",
+          email: user.email || "",
+          phone: user.phone || "",
+          country: user.country || "",
+          city: user.city || "",
+          county: user.county || "",
+          postalCode: user.postal_code || "",
+          addressLine: user.address_line || ""
+        },
+        educations: user.educations?.length 
+          ? user.educations.map(e => ({
+              schoolName: e.schoolName || "",
+              major: e.major || "",
+              degreeType: e.degreeType || "",
+              gpa: e.gpa || "",
+              startDate: e.startDate || "",
+              endDate: e.endDate || "",
+              currentlyStudying: !!e.currentlyStudying,
+            }))
+          : form.getValues().educations,
+        experiences: user.experiences?.length
+          ? user.experiences.map(e => ({
+              jobTitle: e.jobTitle || "",
+              company: e.company || "",
+              jobType: e.jobType || "Full-time",
+              location: e.location || "",
+              startDate: e.startDate || "",
+              endDate: e.endDate || "",
+              currentlyWorking: !!e.currentlyWorking,
+              summary: e.summary || "",
+              descriptions: e.descriptions?.length ? e.descriptions : [""],
+            }))
+          : form.getValues().experiences,
+        skills: user.skills?.length ? user.skills : form.getValues().skills,
+        equalEmployment: {
+          hasDisability: user.has_disability || "",
+          gender: user.gender || "",
+        }
+      })
       setHasSynced(true)
     }
-  }, [user, hasSynced, educations, experiences, skills])
+  }, [user, hasSynced, form])
 
-  if (authLoading) {
+  // Fetch countries list
+  useEffect(() => {
+    const fetchCountries = async () => {
+      try {
+        const response = await fetch("https://restcountries.com/v3.1/all?fields=name")
+        if (!response.ok) throw new Error("Failed to fetch countries")
+        const data = await response.json()
+        const sortedCountries = data
+          .map((c: any) => c.name.common)
+          .sort((a: string, b: string) => a.localeCompare(b))
+        setCountries(sortedCountries)
+      } catch (err) {
+        console.error("Error fetching countries:", err)
+        // Fallback to a minimal list if API fails
+        setCountries(["United States", "United Kingdom", "Canada", "Australia", "Germany", "France", "India", "China", "Japan"])
+      } finally {
+        setIsLoadingCountries(false)
+      }
+    }
+    fetchCountries()
+  }, [])
+
+  // Resume upload
+  const [resumeUploaded, setResumeUploaded] = useState(false)
+  const [newSkill, setNewSkill] = useState("")
+  const [skillSearch, setSkillSearch] = useState("")
+
+  if (authLoading || (!isAuthenticated && !authLoading) || (user?.setup_completed && !authLoading) || (!user?.has_cv && !authLoading)) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <Loader2 className="w-10 h-10 animate-spin text-primary" />
@@ -189,97 +321,36 @@ export function SetupWizard() {
     )
   }
 
-  // Resume upload
-  const [resumeUploaded, setResumeUploaded] = useState(false)
-
-  const addEducation = () => {
-    setEducations([...educations, { 
-      id: Date.now(), 
-      schoolName: "", 
-      major: "", 
-      degreeType: "", 
-      gpa: "", 
-      startDate: "", 
-      endDate: "", 
-      currentlyStudying: false 
-    }])
-  }
-
-  const removeEducation = (id: number) => {
-    if (educations.length > 1) {
-      setEducations(educations.filter(e => e.id !== id))
-    }
-  }
-
-  const updateEducation = (id: number, field: keyof Education, value: string | boolean) => {
-    setEducations(educations.map(e => e.id === id ? { ...e, [field]: value } : e))
-  }
-
-  const addExperience = () => {
-    setExperiences([...experiences, { 
-      id: Date.now(), 
-      jobTitle: "", 
-      company: "", 
-      jobType: "Full-time", 
-      location: "", 
-      startDate: "", 
-      endDate: "", 
-      currentlyWorking: false, 
-      summary: "", 
-      descriptions: [""] 
-    }])
-  }
-
-  const removeExperience = (id: number) => {
-    if (experiences.length > 1) {
-      setExperiences(experiences.filter(e => e.id !== id))
-    }
-  }
-
-  const updateExperience = (id: number, field: keyof WorkExperience, value: string | boolean | string[]) => {
-    setExperiences(experiences.map(e => e.id === id ? { ...e, [field]: value } : e))
-  }
-
-  const addDescription = (expId: number) => {
-    setExperiences(experiences.map(e => 
-      e.id === expId ? { ...e, descriptions: [...e.descriptions, ""] } : e
-    ))
-  }
-
-  const updateDescription = (expId: number, index: number, value: string) => {
-    setExperiences(experiences.map(e => 
-      e.id === expId ? { 
-        ...e, 
-        descriptions: e.descriptions.map((d, i) => i === index ? value : d) 
-      } : e
-    ))
-  }
-
-  const removeDescription = (expId: number, index: number) => {
-    setExperiences(experiences.map(e => 
-      e.id === expId && e.descriptions.length > 1 ? { 
-        ...e, 
-        descriptions: e.descriptions.filter((_, i) => i !== index) 
-      } : e
-    ))
-  }
-
   const addSkill = () => {
-    if (newSkill && !skills.includes(newSkill)) {
-      setSkills([...skills, newSkill])
+    const currentSkills = form.getValues("skills")
+    if (newSkill && !currentSkills.includes(newSkill)) {
+      form.setValue("skills", [...currentSkills, newSkill])
       setNewSkill("")
     }
   }
 
   const removeSkill = (skill: string) => {
-    setSkills(skills.filter(s => s !== skill))
+    const currentSkills = form.getValues("skills")
+    form.setValue("skills", currentSkills.filter(s => s !== skill))
   }
 
-  const handleNext = () => {
-    if (step < 5) {
-      setStep(step + 1)
-    } else {
-      onComplete()
+  const handleNext = async () => {
+    let fieldsToValidate: any[] = []
+    
+    if (step === 1) fieldsToValidate = ["personal"]
+    if (step === 2) fieldsToValidate = ["educations"]
+    if (step === 3) fieldsToValidate = ["experiences"]
+    if (step === 4) fieldsToValidate = ["skills"]
+    if (step === 5) fieldsToValidate = ["equalEmployment"]
+
+    const isValid = await form.trigger(fieldsToValidate as any)
+    
+    if (isValid) {
+      if (step < 5) {
+        setStep(step + 1)
+      } else {
+        form.handleSubmit(onComplete)()
+      }
     }
   }
 
@@ -289,645 +360,870 @@ export function SetupWizard() {
     }
   }
 
+  // Curated list of popular tech stacks for autocomplete
+  const techStacks = [
+    "React", "Next.js", "TypeScript", "JavaScript", "Python", "Node.js", "Docker", "Kubernetes", "AWS", "Google Cloud", "Azure",
+    "Tailwind CSS", "PostgreSQL", "MongoDB", "MySQL", "Redis", "GraphQL", "REST API", "Git", "CI/CD", "Testing", "Jest", "Cypress",
+    "Java", "Spring Boot", "C#", ".NET", "Go", "Rust", "Swift", "Kotlin", "Flutter", "React Native", "Vue.js", "Angular", "Svelte",
+    "Figma", "Redux", "Zustand", "Prisma", "Drizzle", "Firebase", "Supabase", "Machine Learning", "Data Science", "Artificial Intelligence",
+    "OpenAI", "NLP", "Computer Vision", "PyTorch", "TensorFlow", "Pandas", "NumPy", "Scikit-Learn", "FastAPI", "Django", "Flask"
+  ]
+
+  const filteredTech = techStacks.filter(s => 
+    s.toLowerCase().includes(skillSearch.toLowerCase()) && 
+    !form.watch("skills").includes(s)
+  ).slice(0, 5)
+
+
+
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      {/* Progress Bar */}
-      <div className="sticky top-0 z-50 glass-card border-b-0 py-4 px-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex items-center justify-between">
-            {steps.map((s, index) => (
-              <div key={s.number} className="flex items-center">
-                <div className="flex items-center gap-2">
-                  <div className={`
-                    w-7 h-7 rounded-full flex items-center justify-center text-sm font-medium transition-all
-                    ${step >= s.number 
-                      ? 'bg-primary text-primary-foreground shadow-[0_0_15px_rgba(223,255,0,0.4)]' 
-                      : 'bg-muted text-muted-foreground border border-border/50'
-                    }
-                  `}>
-                    {step > s.number ? <Check className="w-4 h-4" /> : s.number}
-                  </div>
-                  <span className={`text-sm font-medium ${step >= s.number ? 'text-foreground' : 'text-muted-foreground'}`}>
-                    {s.label}
-                  </span>
+    <div className="min-h-screen bg-background relative flex flex-col md:flex-row">
+      {/* Decorative Background Elements */}
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10">
+        <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] bg-primary/10 rounded-full blur-[120px] animate-pulse" />
+        <div className="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-[120px]" />
+      </div>
+
+      {/* Sidebar Progress (Desktop) */}
+      <div className="hidden md:flex w-80 bg-muted/30 border-r border-border/50 p-8 flex-col gap-8 backdrop-blur-xl sticky top-0 h-screen overflow-y-auto no-scrollbar">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(223,255,0,0.3)]">
+            <Sparkles className="w-6 h-6 text-primary-foreground" />
+          </div>
+          <h1 className="text-xl font-bold tracking-tight">AI Setup</h1>
+        </div>
+
+        <div className="flex flex-col gap-6">
+          {steps.map((s) => {
+            const Icon = s.icon
+            const isActive = step === s.number
+            const isCompleted = step > s.number
+            
+            return (
+              <div key={s.number} className="flex items-center gap-4 group">
+                <div className={cn(
+                  "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 border",
+                  isActive ? "bg-primary border-primary text-primary-foreground shadow-[0_0_15px_rgba(223,255,0,0.3)] scale-110" : 
+                  isCompleted ? "bg-primary/20 border-primary/30 text-primary" : 
+                  "bg-muted border-border text-muted-foreground group-hover:border-primary/30"
+                )}>
+                  {isCompleted ? <Check className="w-5 h-5" /> : <Icon className="w-5 h-5" />}
                 </div>
-                {index < steps.length - 1 && (
-                  <div className={`w-16 lg:w-24 h-0.5 mx-3 ${step > s.number ? 'bg-primary shadow-[0_0_10px_rgba(223,255,0,0.3)]' : 'bg-border/50'}`} />
-                )}
+                <div className="flex flex-col">
+                  <span className={cn(
+                    "text-sm font-medium transition-colors",
+                    isActive ? "text-foreground" : "text-muted-foreground"
+                  )}>{s.label}</span>
+                  {isActive && <span className="text-[10px] text-primary uppercase tracking-widest font-bold">In Progress</span>}
+                </div>
               </div>
-            ))}
+            )
+          })}
+        </div>
+
+        <div className="mt-auto pt-8 border-t border-border/50">
+          <div className="bg-primary/5 rounded-2xl p-4 border border-primary/10">
+            <p className="text-xs text-muted-foreground leading-relaxed italic">
+              "{aiMessages[step as keyof typeof aiMessages]}"
+            </p>
           </div>
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto p-6">
-        {/* AI Assistant Message */}
-        <div className="flex items-start gap-3 mb-8">
-          <div className="w-12 h-12 rounded-full glass-card border-border/50 flex items-center justify-center flex-shrink-0">
-            <div className="text-xl">{":)"}</div>
-          </div>
-          <div className="bg-primary/10 border border-primary/20 rounded-2xl rounded-tl-none px-5 py-3 max-w-xl">
-            <p className="text-foreground">{aiMessages[step as keyof typeof aiMessages]}</p>
-          </div>
+      {/* Mobile Header Progress */}
+      <div className="md:hidden w-full bg-muted/30 border-b border-border/50 p-4 sticky top-0 z-50 backdrop-blur-xl">
+        <div className="flex items-center justify-between gap-4 max-w-md mx-auto">
+          {steps.map((s) => {
+            const isActive = step === s.number
+            const isCompleted = step > s.number
+            return (
+              <div key={s.number} className="flex-1 flex flex-col items-center gap-1">
+                <div className={cn(
+                  "h-1.5 w-full rounded-full transition-all duration-500",
+                  isActive ? "bg-primary shadow-[0_0_10px_rgba(223,255,0,0.3)]" : 
+                  isCompleted ? "bg-primary/40" : "bg-muted"
+                )} />
+                <span className={cn("text-[10px] font-bold", isActive ? "text-primary" : "text-muted-foreground")}>Step {s.number}</span>
+              </div>
+            )
+          })}
         </div>
+      </div>
 
-        {/* Step Content */}
-        <div className="glass-card rounded-2xl shadow-lg border border-border/50 p-6 lg:p-8">
-          
-          {/* Step 1: Personal Info */}
-          {step === 1 && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label className="text-foreground"><span className="text-destructive">*</span>First Name</Label>
-                  <Input 
-                    value={personal.firstName}
-                    onChange={(e) => setPersonal({...personal, firstName: e.target.value})}
-                    className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary"
-                    placeholder="John"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-foreground"><span className="text-destructive">*</span>Last Name</Label>
-                  <Input 
-                    value={personal.lastName}
-                    onChange={(e) => setPersonal({...personal, lastName: e.target.value})}
-                    className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary"
-                    placeholder="Doe"
-                  />
-                </div>
-              </div>
+      {/* Main Content Area */}
+      <main className="flex-1">
+        <div className="max-w-3xl mx-auto p-6 md:p-12 lg:p-16">
+          <div className="mb-12">
+            <h2 className="text-3xl font-bold mb-2">{steps[step-1].label}</h2>
+            <p className="text-muted-foreground">Complete your profile to get the best matching opportunities.</p>
+          </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label className="text-foreground"><span className="text-destructive">*</span>Email</Label>
-                  <Input 
-                    type="email"
-                    value={personal.email}
-                    onChange={(e) => setPersonal({...personal, email: e.target.value})}
-                    className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary"
-                    placeholder="john.doe@email.com"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-foreground"><span className="text-destructive">*</span>Phone</Label>
-                  <Input 
-                    value={personal.phone}
-                    onChange={(e) => setPersonal({...personal, phone: e.target.value})}
-                    className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary"
-                    placeholder="+1 234 567 8900"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label className="text-foreground">Country/Region</Label>
-                  <Select value={personal.country} onValueChange={(v) => setPersonal({...personal, country: v})}>
-                    <SelectTrigger className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary">
-                      <SelectValue placeholder="Select country" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="us">United States</SelectItem>
-                      <SelectItem value="uk">United Kingdom</SelectItem>
-                      <SelectItem value="ca">Canada</SelectItem>
-                      <SelectItem value="de">Germany</SelectItem>
-                      <SelectItem value="fr">France</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-foreground">City</Label>
-                  <Input 
-                    value={personal.city}
-                    onChange={(e) => setPersonal({...personal, city: e.target.value})}
-                    className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary"
-                    placeholder="San Francisco"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label className="text-foreground">County</Label>
-                  <Input 
-                    value={personal.county}
-                    onChange={(e) => setPersonal({...personal, county: e.target.value})}
-                    className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-foreground">Postal Code</Label>
-                  <Input 
-                    value={personal.postalCode}
-                    onChange={(e) => setPersonal({...personal, postalCode: e.target.value})}
-                    className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-foreground">Address Line</Label>
-                <Input 
-                  value={personal.addressLine}
-                  onChange={(e) => setPersonal({...personal, addressLine: e.target.value})}
-                  className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary"
-                  placeholder="123 Main Street"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Step 2: Education */}
-          {step === 2 && (
-            <div className="space-y-6">
-              {educations.map((edu, index) => (
-                <div key={edu.id} className="border border-border/50 rounded-xl p-6 relative">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold text-foreground">Education {index + 1}</h3>
-                    {educations.length > 1 && (
-                      <Button 
-                        variant="ghost" 
-                        size="icon"
-                        onClick={() => removeEducation(edu.id)}
-                        className="text-muted-foreground hover:text-destructive"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </Button>
-                    )}
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onComplete)} className="space-y-10">
+              {/* Step 1: Personal Info */}
+              {step === 1 && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <FormField
+                      control={form.control}
+                      name="personal.firstName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel required>First Name</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="John" className="bg-muted/30 h-12 rounded-xl" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="personal.lastName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel required>Last Name</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="Doe" className="bg-muted/30 h-12 rounded-xl" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   </div>
 
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label className="text-foreground"><span className="text-destructive">*</span>School Name</Label>
-                      <Select 
-                        value={edu.schoolName} 
-                        onValueChange={(v) => updateEducation(edu.id, 'schoolName', v)}
-                      >
-                        <SelectTrigger className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary">
-                          <SelectValue placeholder="Select or type school name" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="mit">Massachusetts Institute of Technology</SelectItem>
-                          <SelectItem value="stanford">Stanford University</SelectItem>
-                          <SelectItem value="berkeley">UC Berkeley</SelectItem>
-                          <SelectItem value="harvard">Harvard University</SelectItem>
-                          <SelectItem value="other">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <FormField
+                      control={form.control}
+                      name="personal.email"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel required>Email Address</FormLabel>
+                          <FormControl>
+                            <Input {...field} type="email" placeholder="john@example.com" className="bg-muted/30 h-12 rounded-xl" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="personal.phone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Phone Number</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="+1 (555) 000-0000" className="bg-muted/30 h-12 rounded-xl" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="space-y-2">
-                        <Label className="text-foreground"><span className="text-destructive">*</span>Major</Label>
-                        <Select 
-                          value={edu.major} 
-                          onValueChange={(v) => updateEducation(edu.id, 'major', v)}
-                        >
-                          <SelectTrigger className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary">
-                            <SelectValue placeholder="Select major" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="cs">Computer Science</SelectItem>
-                            <SelectItem value="ee">Electrical Engineering</SelectItem>
-                            <SelectItem value="se">Software Engineering</SelectItem>
-                            <SelectItem value="ds">Data Science</SelectItem>
-                            <SelectItem value="other">Other</SelectItem>
-                          </SelectContent>
-                        </Select>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-border/50">
+                    <FormField
+                      control={form.control}
+                      name="personal.country"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-col">
+                          <FormLabel required>Country</FormLabel>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <FormControl>
+                                <Button
+                                  variant="outline"
+                                  role="combobox"
+                                  className={cn(
+                                    "w-full justify-between bg-background/40 backdrop-blur-md border-border/50 hover:border-primary/30 h-12 rounded-xl transition-all font-normal",
+                                    !field.value && "text-muted-foreground"
+                                  )}
+                                >
+                                  {field.value
+                                    ? countries.find((country) => country === field.value)
+                                    : "Select country"}
+                                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                </Button>
+                              </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[--radix-popover-trigger-width] p-0 bg-background/95 backdrop-blur-xl border-border/50 shadow-2xl" align="start">
+                              <Command className="bg-transparent">
+                                <CommandInput placeholder="Search country..." className="h-12" />
+                                <CommandList className="max-h-[300px]">
+                                  {isLoadingCountries ? (
+                                    <div className="flex items-center justify-center p-4">
+                                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <CommandEmpty>No country found.</CommandEmpty>
+                                      <CommandGroup>
+                                        {countries.map((country) => (
+                                          <CommandItem
+                                            value={country}
+                                            key={country}
+                                            onSelect={() => {
+                                              form.setValue("personal.country", country)
+                                            }}
+                                            className="flex items-center gap-2 px-4 py-3 cursor-pointer hover:bg-primary/10"
+                                          >
+                                            <Check
+                                              className={cn(
+                                                "h-4 w-4 text-primary",
+                                                country === field.value ? "opacity-100" : "opacity-0"
+                                              )}
+                                            />
+                                            {country}
+                                          </CommandItem>
+                                        ))}
+                                      </CommandGroup>
+                                    </>
+                                  )}
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="personal.city"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel required>City</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="San Francisco" className="bg-muted/30 h-12 rounded-xl" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <FormField
+                      control={form.control}
+                      name="personal.postalCode"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Postal Code</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="94103" className="bg-muted/30 h-12 rounded-xl" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="personal.addressLine"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Address Line</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="123 Main Street" className="bg-muted/30 h-12 rounded-xl" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Step 2: Education */}
+              {step === 2 && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  {educationFields.map((edu, index) => (
+                    <div key={edu.id} className="bg-muted/10 border border-border/50 rounded-2xl p-8 relative shadow-sm hover:shadow-md transition-shadow">
+                      <div className="flex items-center justify-between mb-8">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-primary/20 rounded-lg flex items-center justify-center">
+                            <span className="text-primary font-bold text-xs">{index + 1}</span>
+                          </div>
+                          <h3 className="font-semibold text-lg">Education History</h3>
+                        </div>
+                        {educationFields.length > 1 && (
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={() => removeEducation(index)}
+                            className="text-muted-foreground hover:text-destructive rounded-full"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
                       </div>
-                      <div className="space-y-2">
-                        <Label className="text-foreground"><span className="text-destructive">*</span>Degree Type</Label>
-                        <Select 
-                          value={edu.degreeType} 
-                          onValueChange={(v) => updateEducation(edu.id, 'degreeType', v)}
-                        >
-                          <SelectTrigger className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary">
-                            <SelectValue placeholder="Select degree" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="bachelor">Bachelor</SelectItem>
-                            <SelectItem value="master">Master</SelectItem>
-                            <SelectItem value="phd">PhD</SelectItem>
-                            <SelectItem value="associate">Associate</SelectItem>
-                          </SelectContent>
-                        </Select>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <FormField
+                          control={form.control}
+                          name={`educations.${index}.schoolName`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel required>School/University</FormLabel>
+                              <FormControl>
+                                <Input {...field} placeholder="Harvard University" className="bg-background h-12 rounded-xl border-border/50" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`educations.${index}.major`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel required>Field of Study</FormLabel>
+                              <FormControl>
+                                <Input {...field} placeholder="Computer Science" className="bg-background h-12 rounded-xl border-border/50" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
                       </div>
-                      <div className="space-y-2">
-                        <Label className="text-foreground">GPA</Label>
-                        <Input 
-                          value={edu.gpa}
-                          onChange={(e) => updateEducation(edu.id, 'gpa', e.target.value)}
-                          className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary"
-                          placeholder="3.8"
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                        <FormField
+                          control={form.control}
+                          name={`educations.${index}.degreeType`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel required>Degree Type</FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl>
+                                  <SelectTrigger className="bg-background/40 backdrop-blur-md border-border/50 hover:border-primary/30 h-12 rounded-xl transition-all">
+                                    <SelectValue placeholder="Select degree" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent className="bg-background/95 backdrop-blur-xl border-border/50 shadow-2xl max-h-[300px]">
+                                  <SelectItem value="Bachelor">Bachelor</SelectItem>
+                                  <SelectItem value="Master">Master</SelectItem>
+                                  <SelectItem value="PhD">PhD</SelectItem>
+                                  <SelectItem value="Associate">Associate</SelectItem>
+                                  <SelectItem value="Bootcamp">Bootcamp/Certificate</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`educations.${index}.gpa`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>GPA (Optional)</FormLabel>
+                              <FormControl>
+                                <Input {...field} placeholder="3.8/4.0" className="bg-background h-12 rounded-xl border-border/50" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                        <FormField
+                          control={form.control}
+                          name={`educations.${index}.startDate`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel required>Start Date</FormLabel>
+                              <FormControl>
+                                <DatePicker 
+                                  value={field.value} 
+                                  onChange={field.onChange} 
+                                  placeholder="Select start date"
+                                  className="bg-background"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`educations.${index}.endDate`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>End Date</FormLabel>
+                              <FormControl>
+                                <DatePicker 
+                                  value={field.value} 
+                                  onChange={field.onChange} 
+                                  placeholder="Select end date"
+                                  className="bg-background"
+                                  disabled={form.watch(`educations.${index}.currentlyStudying`)} 
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      <div className="mt-4 flex items-center gap-2">
+                        <FormField
+                          control={form.control}
+                          name={`educations.${index}.currentlyStudying`}
+                          render={({ field }) => (
+                            <FormItem className="flex flex-row items-center space-x-2 space-y-0 bg-background/50 px-3 py-1.5 rounded-full border border-border/30">
+                              <FormControl>
+                                <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                              </FormControl>
+                              <FormLabel className="text-xs font-normal cursor-pointer">I am currently studying here</FormLabel>
+                            </FormItem>
+                          )}
                         />
                       </div>
                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label className="text-foreground">Start Date</Label>
-                        <Select 
-                          value={edu.startDate} 
-                          onValueChange={(v) => updateEducation(edu.id, 'startDate', v)}
-                        >
-                          <SelectTrigger className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary">
-                            <SelectValue placeholder="Select start date" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Array.from({ length: 10 }, (_, i) => 2026 - i).map(year => (
-                              <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-foreground">End Date</Label>
-                        <Select 
-                          value={edu.endDate} 
-                          onValueChange={(v) => updateEducation(edu.id, 'endDate', v)}
-                          disabled={edu.currentlyStudying}
-                        >
-                          <SelectTrigger className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary">
-                            <SelectValue placeholder="Select end date" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Array.from({ length: 10 }, (_, i) => 2030 - i).map(year => (
-                              <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <div className="flex items-center gap-2 mt-2">
-                          <Checkbox 
-                            id={`currently-studying-${edu.id}`}
-                            checked={edu.currentlyStudying}
-                            onCheckedChange={(c) => updateEducation(edu.id, 'currentlyStudying', c as boolean)}
-                          />
-                          <label htmlFor={`currently-studying-${edu.id}`} className="text-sm text-foreground">
-                            I currently study here
-                          </label>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  ))}
+                  <Button 
+                    variant="outline" 
+                    type="button"
+                    onClick={() => appendEducation({ schoolName: "", major: "", degreeType: "", gpa: "", startDate: "", endDate: "", currentlyStudying: false })}
+                    className="w-full border-dashed border-2 py-8 rounded-2xl hover:border-primary/50 hover:bg-primary/5 transition-all group"
+                  >
+                    <Plus className="w-5 h-5 mr-2 group-hover:scale-125 transition-transform" />
+                    Add Another Education
+                  </Button>
                 </div>
-              ))}
+              )}
 
-              <Button 
-                variant="outline" 
-                onClick={addEducation}
-                className="w-full border-dashed border-border/50 text-foreground hover:bg-muted/30"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Education
-              </Button>
-            </div>
-          )}
-
-          {/* Step 3: Work Experience */}
-          {step === 3 && (
-            <div className="space-y-6">
-              {experiences.map((exp, index) => (
-                <div key={exp.id} className="border border-border/50 rounded-xl p-6 relative">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold text-foreground">Experience {index + 1}</h3>
-                    {experiences.length > 1 && (
-                      <Button 
-                        variant="ghost" 
-                        size="icon"
-                        onClick={() => removeExperience(exp.id)}
-                        className="text-muted-foreground hover:text-destructive"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </Button>
-                    )}
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label className="text-foreground"><span className="text-destructive">*</span>Job Title</Label>
-                      <Select 
-                        value={exp.jobTitle} 
-                        onValueChange={(v) => updateExperience(exp.id, 'jobTitle', v)}
-                      >
-                        <SelectTrigger className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary">
-                          <SelectValue placeholder="Select job title" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="frontend">Frontend Developer</SelectItem>
-                          <SelectItem value="backend">Backend Developer</SelectItem>
-                          <SelectItem value="fullstack">Full Stack Developer</SelectItem>
-                          <SelectItem value="software">Software Engineer</SelectItem>
-                          <SelectItem value="senior">Senior Software Engineer</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="text-foreground"><span className="text-destructive">*</span>Company</Label>
-                      <Input 
-                        value={exp.company}
-                        onChange={(e) => updateExperience(exp.id, 'company', e.target.value)}
-                        className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary"
-                        placeholder="Company name"
-                      />
-                      <p className="text-xs text-muted-foreground">Tips: Pick the company from above for better accuracy</p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label className="text-foreground"><span className="text-destructive">*</span>Job Type</Label>
-                        <Select 
-                          value={exp.jobType} 
-                          onValueChange={(v) => updateExperience(exp.id, 'jobType', v)}
-                        >
-                          <SelectTrigger className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Full-time">Full-time</SelectItem>
-                            <SelectItem value="Part-time">Part-time</SelectItem>
-                            <SelectItem value="Contract">Contract</SelectItem>
-                            <SelectItem value="Internship">Internship</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-foreground">Location</Label>
-                        <Select 
-                          value={exp.location} 
-                          onValueChange={(v) => updateExperience(exp.id, 'location', v)}
-                        >
-                          <SelectTrigger className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary">
-                            <SelectValue placeholder="Select location" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="remote">Remote</SelectItem>
-                            <SelectItem value="sf">San Francisco, CA</SelectItem>
-                            <SelectItem value="nyc">New York, NY</SelectItem>
-                            <SelectItem value="seattle">Seattle, WA</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label className="text-foreground">Start Date</Label>
-                        <Select 
-                          value={exp.startDate} 
-                          onValueChange={(v) => updateExperience(exp.id, 'startDate', v)}
-                        >
-                          <SelectTrigger className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary">
-                            <SelectValue placeholder="Select start date" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Array.from({ length: 15 }, (_, i) => `${2026 - i}-${String(Math.floor(Math.random() * 12) + 1).padStart(2, '0')}`).map(date => (
-                              <SelectItem key={date} value={date}>{date}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-foreground">End Date</Label>
-                        <Select 
-                          value={exp.endDate} 
-                          onValueChange={(v) => updateExperience(exp.id, 'endDate', v)}
-                          disabled={exp.currentlyWorking}
-                        >
-                          <SelectTrigger className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary">
-                            <SelectValue placeholder="Select end date" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Array.from({ length: 10 }, (_, i) => `${2026 - i}-${String(Math.floor(Math.random() * 12) + 1).padStart(2, '0')}`).map(date => (
-                              <SelectItem key={date} value={date}>{date}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <div className="flex items-center gap-2 mt-2">
-                          <Checkbox 
-                            id={`currently-working-${exp.id}`}
-                            checked={exp.currentlyWorking}
-                            onCheckedChange={(c) => updateExperience(exp.id, 'currentlyWorking', c as boolean)}
-                          />
-                          <label htmlFor={`currently-working-${exp.id}`} className="text-sm text-foreground">
-                            I currently work here
-                          </label>
+              {/* Step 3: Work Experience */}
+              {step === 3 && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  {experienceFields.map((exp, index) => (
+                    <div key={exp.id} className="bg-muted/10 border border-border/50 rounded-2xl p-8 relative shadow-sm hover:shadow-md transition-shadow">
+                      <div className="flex items-center justify-between mb-8">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-primary/20 rounded-lg flex items-center justify-center">
+                            <span className="text-primary font-bold text-xs">{index + 1}</span>
+                          </div>
+                          <h3 className="font-semibold text-lg">Work Experience</h3>
                         </div>
+                        {experienceFields.length > 1 && (
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={() => removeExperience(index)}
+                            className="text-muted-foreground hover:text-destructive rounded-full"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
                       </div>
-                    </div>
 
-                    <div className="space-y-2">
-                      <Label className="text-foreground">Experience Summary</Label>
-                      <Textarea 
-                        value={exp.summary}
-                        onChange={(e) => updateExperience(exp.id, 'summary', e.target.value)}
-                        className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary min-h-[80px]"
-                        placeholder="Brief summary of your role and responsibilities..."
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <FormField
+                          control={form.control}
+                          name={`experiences.${index}.jobTitle`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel required>Job Title</FormLabel>
+                              <FormControl>
+                                <Input {...field} placeholder="Software Engineer" className="bg-background h-12 rounded-xl border-border/50" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`experiences.${index}.company`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel required>Company</FormLabel>
+                              <FormControl>
+                                <Input {...field} placeholder="Tech Solutions Inc." className="bg-background h-12 rounded-xl border-border/50" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                        <FormField
+                          control={form.control}
+                          name={`experiences.${index}.jobType`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Job Type</FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl>
+                                  <SelectTrigger className="bg-background/40 backdrop-blur-md border-border/50 hover:border-primary/30 h-12 rounded-xl transition-all">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent className="bg-background/95 backdrop-blur-xl border-border/50 shadow-2xl max-h-[300px]">
+                                  <SelectItem value="Full-time">Full-time</SelectItem>
+                                  <SelectItem value="Part-time">Part-time</SelectItem>
+                                  <SelectItem value="Contract">Contract</SelectItem>
+                                  <SelectItem value="Internship">Internship</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`experiences.${index}.location`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Location</FormLabel>
+                              <FormControl>
+                                <Input {...field} placeholder="Remote / New York, NY" className="bg-background h-12 rounded-xl border-border/50" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                        <FormField
+                          control={form.control}
+                          name={`experiences.${index}.startDate`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel required>Start Date</FormLabel>
+                              <FormControl>
+                                <DatePicker 
+                                  value={field.value} 
+                                  onChange={field.onChange} 
+                                  placeholder="Select start date"
+                                  className="bg-background"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`experiences.${index}.endDate`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>End Date</FormLabel>
+                              <FormControl>
+                                <DatePicker 
+                                  value={field.value} 
+                                  onChange={field.onChange} 
+                                  placeholder="Select end date"
+                                  className="bg-background"
+                                  disabled={form.watch(`experiences.${index}.currentlyWorking`)} 
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      <div className="mt-4 flex items-center gap-2 mb-6">
+                        <FormField
+                          control={form.control}
+                          name={`experiences.${index}.currentlyWorking`}
+                          render={({ field }) => (
+                            <FormItem className="flex flex-row items-center space-x-2 space-y-0 bg-background/50 px-3 py-1.5 rounded-full border border-border/30">
+                              <FormControl>
+                                <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                              </FormControl>
+                              <FormLabel className="text-xs font-normal cursor-pointer">I currently work here</FormLabel>
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      <FormField
+                        control={form.control}
+                        name={`experiences.${index}.summary`}
+                        render={({ field }) => (
+                          <FormItem className="mt-6">
+                            <FormLabel>Role Summary</FormLabel>
+                            <FormControl>
+                              <Textarea 
+                                {...field} 
+                                className="bg-background min-h-[100px] rounded-xl border-border/50" 
+                                placeholder="Describe your main responsibilities and focus..." 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
                       />
-                    </div>
 
-                    <div className="space-y-2">
-                      <Label className="text-foreground">Job Description</Label>
-                      <div className="space-y-2">
-                        {exp.descriptions.map((desc, descIndex) => (
-                          <div key={descIndex} className="flex items-start gap-2">
-                            <span className="text-muted-foreground mt-2.5">•</span>
-                            <Textarea 
-                              value={desc}
-                              onChange={(e) => updateDescription(exp.id, descIndex, e.target.value)}
-                              className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary min-h-[60px] flex-1"
-                              placeholder="Describe an accomplishment or responsibility..."
+                      <div className="mt-8 space-y-4">
+                        <FormLabel className="text-sm font-semibold flex items-center gap-2">
+                          <Check className="w-4 h-4 text-primary" />
+                          Key Achievements
+                        </FormLabel>
+                        {form.watch(`experiences.${index}.descriptions`).map((_, descIndex) => (
+                          <div key={descIndex} className="flex items-start gap-2 group">
+                            <FormField
+                              control={form.control}
+                              name={`experiences.${index}.descriptions.${descIndex}`}
+                              render={({ field }) => (
+                                <FormItem className="flex-1 space-y-0">
+                                  <FormControl>
+                                    <Input {...field} placeholder="Reduced API latency by 40%..." className="bg-background h-10 rounded-lg border-border/50" />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
                             />
-                            {exp.descriptions.length > 1 && (
+                            {form.watch(`experiences.${index}.descriptions`).length > 1 && (
                               <Button 
                                 variant="ghost" 
-                                size="icon"
-                                onClick={() => removeDescription(exp.id, descIndex)}
-                                className="text-muted-foreground hover:text-destructive mt-1"
+                                size="icon" 
+                                onClick={() => {
+                                  const descs = form.getValues(`experiences.${index}.descriptions`)
+                                  form.setValue(`experiences.${index}.descriptions`, descs.filter((_, i) => i !== descIndex))
+                                }}
+                                className="text-muted-foreground hover:text-destructive h-10 w-10 opacity-0 group-hover:opacity-100 transition-opacity"
                               >
                                 <X className="w-4 h-4" />
                               </Button>
                             )}
                           </div>
                         ))}
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          type="button"
+                          onClick={() => {
+                            const descs = form.getValues(`experiences.${index}.descriptions`)
+                            form.setValue(`experiences.${index}.descriptions`, [...descs, ""])
+                          }}
+                          className="text-primary hover:bg-primary/5 h-8 px-2"
+                        >
+                          <Plus className="w-3 h-3 mr-1" />
+                          Add achievement
+                        </Button>
                       </div>
-                      <Button 
-                        variant="ghost" 
-                        size="sm"
-                        onClick={() => addDescription(exp.id)}
-                        className="text-primary hover:text-primary/80"
-                      >
-                        <Plus className="w-4 h-4 mr-1" />
-                        Add bullet point
-                      </Button>
+                    </div>
+                  ))}
+                  <Button 
+                    variant="outline" 
+                    type="button"
+                    onClick={() => appendExperience({ jobTitle: "", company: "", jobType: "Full-time", location: "", startDate: "", endDate: "", currentlyWorking: false, summary: "", descriptions: [""] })}
+                    className="w-full border-dashed border-2 py-8 rounded-2xl hover:border-primary/50 hover:bg-primary/5 transition-all group"
+                  >
+                    <Plus className="w-5 h-5 mr-2 group-hover:scale-125 transition-transform" />
+                    Add Work Experience
+                  </Button>
+                </div>
+              )}
+
+              {/* Step 4: Skills */}
+              {step === 4 && (
+                <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="space-y-6">
+                    <FormLabel required className="text-xl font-bold">What are your top skills?</FormLabel>
+                    <div className="flex flex-col gap-4">
+                      <div className="relative group">
+                        <Input 
+                          value={skillSearch}
+                          onChange={(e) => setSkillSearch(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && skillSearch) {
+                              e.preventDefault()
+                              if (!form.getValues("skills").includes(skillSearch)) {
+                                form.setValue("skills", [...form.getValues("skills"), skillSearch])
+                                setSkillSearch("")
+                              }
+                            }
+                          }}
+                          className="bg-muted/30 h-14 rounded-2xl pl-12 border-border/50 focus:border-primary/50 transition-all"
+                          placeholder="Search or type a skill (e.g. React, Python)..."
+                        />
+                        <Sparkles className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-primary/40 group-focus-within:text-primary transition-colors" />
+                        
+                        {/* Autocomplete Suggestions */}
+                        {skillSearch && filteredTech.length > 0 && (
+                          <div className="absolute top-full left-0 w-full mt-2 bg-background/95 backdrop-blur-xl border border-border/50 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                            <div className="p-2 flex flex-col gap-1">
+                              {filteredTech.map(skill => (
+                                <button
+                                  key={skill}
+                                  type="button"
+                                  onClick={() => {
+                                    form.setValue("skills", [...form.getValues("skills"), skill])
+                                    setSkillSearch("")
+                                  }}
+                                  className="flex items-center gap-3 px-4 py-3 hover:bg-primary/10 rounded-xl transition-all text-left group/item"
+                                >
+                                  <div className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center group-hover/item:bg-primary/20 transition-colors">
+                                    <Plus className="w-4 h-4 text-muted-foreground group-hover/item:text-primary" />
+                                  </div>
+                                  <span className="font-medium">{skill}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground ml-2">Press Enter to add a custom skill or select from the list.</p>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-3 mt-8">
+                      {form.watch("skills").map((skill) => (
+                        <Badge 
+                          key={skill} 
+                          variant="secondary"
+                          className="px-4 py-2 text-sm bg-primary/10 text-foreground border-primary/20 flex items-center gap-2 group rounded-xl hover:bg-primary/20 transition-all cursor-default"
+                        >
+                          {skill}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              removeSkill(skill)
+                            }}
+                            className="p-0.5 hover:bg-destructive/20 rounded-md transition-colors group"
+                          >
+                            <X className="w-3.5 h-3.5 text-muted-foreground group-hover:text-destructive" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-6 pt-8 border-t border-border/50">
+                    <Label className="text-sm font-semibold text-muted-foreground tracking-wider uppercase">Suggested Skills</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {techStacks
+                        .filter(s => !form.watch("skills").includes(s))
+                        .slice(0, 20)
+                        .map(skill => (
+                          <Badge 
+                            key={skill} 
+                            variant="outline" 
+                            className="px-4 py-2 cursor-pointer hover:bg-primary/10 hover:border-primary/40 transition-all rounded-xl border-border/50 bg-background/20"
+                            onClick={() => form.setValue("skills", [...form.getValues("skills"), skill])}
+                          >
+                            <Plus className="w-3.5 h-3.5 mr-2 opacity-50" />
+                            {skill}
+                          </Badge>
+                        ))
+                      }
                     </div>
                   </div>
                 </div>
-              ))}
+              )}
 
-              <Button 
-                variant="outline" 
-                onClick={addExperience}
-                className="w-full border-dashed border-border/50 text-foreground hover:bg-muted/30"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Work Experience
-              </Button>
-            </div>
-          )}
+              {/* Step 5: Equal Employment */}
+              {step === 5 && (
+                <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="bg-primary/5 border border-primary/10 rounded-2xl p-6 mb-8">
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      To comply with equal employment laws and speed up your applications, you can optionally provide your identity information. This is private and only used for autofilling job applications.
+                    </p>
+                  </div>
 
-          {/* Step 4: Skills */}
-          {step === 4 && (
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <Label className="text-foreground text-lg font-semibold">Skills</Label>
-                <div className="flex flex-wrap gap-2 p-4 bg-muted/30 rounded-xl min-h-[120px]">
-                  {skills.map(skill => (
-                    <Badge 
-                      key={skill} 
-                      variant="secondary"
-                      className="glass-card border-border/50 text-foreground hover:bg-muted/50 cursor-pointer px-3 py-1.5 text-sm"
-                      onClick={() => removeSkill(skill)}
-                    >
-                      {skill}
-                      <X className="w-3 h-3 ml-2" />
-                    </Badge>
-                  ))}
-                </div>
-                <div className="flex gap-2 mt-2">
-                  <Input 
-                    value={newSkill}
-                    onChange={(e) => setNewSkill(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && addSkill()}
-                    placeholder="Add skill..."
-                    className="bg-muted/30 border-border/50 hover:border-primary/50 transition-colors focus:ring-primary/50 focus:border-primary"
+                  <FormField
+                    control={form.control}
+                    name="equalEmployment.gender"
+                    render={({ field }) => (
+                      <FormItem className="space-y-4">
+                        <FormLabel className="text-lg font-semibold">Gender Identity</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger className="bg-background/40 backdrop-blur-md border-border/50 hover:border-primary/30 h-14 rounded-2xl border-border/50 transition-all">
+                              <SelectValue placeholder="Select gender" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent className="bg-background/95 backdrop-blur-xl border-border/50 shadow-2xl">
+                            <SelectItem value="male">Male</SelectItem>
+                            <SelectItem value="female">Female</SelectItem>
+                            <SelectItem value="non-binary">Non-binary</SelectItem>
+                            <SelectItem value="prefer-not-to-say">Prefer not to say</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
                   />
-                  <Button onClick={addSkill} className="bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-[0_0_15px_rgba(223,255,0,0.4)] transition-all">
-                    Add
+
+                  <FormField
+                    control={form.control}
+                    name="equalEmployment.hasDisability"
+                    render={({ field }) => (
+                      <FormItem className="space-y-4">
+                        <FormLabel className="text-lg font-semibold">Disability Status</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger className="bg-background/40 backdrop-blur-md border-border/50 hover:border-primary/30 h-14 rounded-2xl border-border/50 transition-all">
+                              <SelectValue placeholder="Select status" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent className="bg-background/95 backdrop-blur-xl border-border/50 shadow-2xl">
+                            <SelectItem value="yes">Yes, I have a disability</SelectItem>
+                            <SelectItem value="no">No, I don't have a disability</SelectItem>
+                            <SelectItem value="prefer-not-to-say">Prefer not to say</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              )}
+
+              {/* Navigation Footer */}
+              <div className="flex items-center justify-between pt-12 border-t border-border/50 mt-auto">
+                <Button 
+                  type="button"
+                  variant="outline" 
+                  onClick={handleBack}
+                  disabled={step === 1 || isSaving}
+                  className="h-12 px-6 rounded-xl border-border/50 hover:bg-muted hover:border-primary/20 transition-all"
+                >
+                  <ChevronLeft className="w-5 h-5 mr-2" />
+                  Back
+                </Button>
+
+                <div className="flex gap-4">
+                  <Button 
+                    type="button"
+                    onClick={handleNext}
+                    disabled={isSaving}
+                    className="h-12 px-8 rounded-xl shadow-xl shadow-primary/20 min-w-[140px]"
+                  >
+                    {isSaving ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : step === 5 ? (
+                      <>
+                        Start Matching
+                        <Sparkles className="w-4 h-4 ml-2" />
+                      </>
+                    ) : (
+                      <>
+                        Continue
+                        <ChevronRight className="w-5 h-5 ml-2" />
+                      </>
+                    )}
                   </Button>
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label className="text-foreground">Suggested Skills</Label>
-                <div className="flex flex-wrap gap-2">
-                  {suggestedSkills.filter(s => !skills.includes(s)).slice(0, 15).map(skill => (
-                    <Badge 
-                      key={skill} 
-                      variant="outline"
-                      className="border-border/50 text-muted-foreground hover:bg-[#00D9A5]/10 hover:text-primary hover:border-primary shadow-[0_0_15px_rgba(223,255,0,0.2)]/30 cursor-pointer px-3 py-1.5"
-                      onClick={() => setSkills([...skills, skill])}
-                    >
-                      <Plus className="w-3 h-3 mr-1" />
-                      {skill}
-                    </Badge>
-                  ))}
+              {saveError && (
+                <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm flex items-center gap-2 animate-in fade-in zoom-in duration-300">
+                  <AlertCircle className="w-4 h-4" />
+                  {saveError}
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* Step 5: Equal Employment */}
-          {step === 5 && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="border border-border/50 rounded-xl p-5">
-                  <Label className="text-foreground block mb-3">
-                    <span className="text-destructive">*</span>Do You Have A Disability?
-                  </Label>
-                  <div className="flex flex-wrap gap-3">
-                    <Button 
-                      variant={equalEmployment.hasDisability === 'yes' ? 'default' : 'outline'}
-                      onClick={() => setEqualEmployment({...equalEmployment, hasDisability: 'yes'})}
-                      className={equalEmployment.hasDisability === 'yes' ? 'bg-primary text-primary-foreground shadow-[0_0_10px_rgba(223,255,0,0.3)]' : ''}
-                    >
-                      Yes
-                    </Button>
-                    <Button 
-                      variant={equalEmployment.hasDisability === 'no' ? 'default' : 'outline'}
-                      onClick={() => setEqualEmployment({...equalEmployment, hasDisability: 'no'})}
-                      className={equalEmployment.hasDisability === 'no' ? 'bg-primary text-primary-foreground shadow-[0_0_10px_rgba(223,255,0,0.3)]' : ''}
-                    >
-                      No
-                    </Button>
-                    <Button 
-                      variant={equalEmployment.hasDisability === 'decline' ? 'default' : 'outline'}
-                      onClick={() => setEqualEmployment({...equalEmployment, hasDisability: 'decline'})}
-                      className={equalEmployment.hasDisability === 'decline' ? 'bg-primary text-primary-foreground shadow-[0_0_10px_rgba(223,255,0,0.3)]' : ''}
-                    >
-                      Decline to state
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="border border-border/50 rounded-xl p-5">
-                  <Label className="text-foreground block mb-3">
-                    <span className="text-destructive">*</span>What Is Your Gender?
-                  </Label>
-                  <div className="flex flex-wrap gap-3">
-                    <Button 
-                      variant={equalEmployment.gender === 'male' ? 'default' : 'outline'}
-                      onClick={() => setEqualEmployment({...equalEmployment, gender: 'male'})}
-                      className={equalEmployment.gender === 'male' ? 'bg-primary text-primary-foreground shadow-[0_0_10px_rgba(223,255,0,0.3)]' : ''}
-                    >
-                      Male
-                    </Button>
-                    <Button 
-                      variant={equalEmployment.gender === 'female' ? 'default' : 'outline'}
-                      onClick={() => setEqualEmployment({...equalEmployment, gender: 'female'})}
-                      className={equalEmployment.gender === 'female' ? 'bg-primary text-primary-foreground shadow-[0_0_10px_rgba(223,255,0,0.3)]' : ''}
-                    >
-                      Female
-                    </Button>
-                    <Button 
-                      variant={equalEmployment.gender === 'nonbinary' ? 'default' : 'outline'}
-                      onClick={() => setEqualEmployment({...equalEmployment, gender: 'nonbinary'})}
-                      className={equalEmployment.gender === 'nonbinary' ? 'bg-primary text-primary-foreground shadow-[0_0_10px_rgba(223,255,0,0.3)]' : ''}
-                    >
-                      Non-Binary
-                    </Button>
-                    <Button 
-                      variant={equalEmployment.gender === 'decline' ? 'default' : 'outline'}
-                      onClick={() => setEqualEmployment({...equalEmployment, gender: 'decline'})}
-                      className={equalEmployment.gender === 'decline' ? 'bg-primary text-primary-foreground shadow-[0_0_10px_rgba(223,255,0,0.3)]' : ''}
-                    >
-                      Decline to state
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+              )}
+            </form>
+          </Form>
         </div>
-
-        {/* Navigation */}
-        <div className="flex justify-center mt-8">
-          {step > 1 && (
-            <Button 
-              variant="ghost" 
-              onClick={handleBack}
-              className="mr-4 text-foreground"
-            >
-              Back
-            </Button>
-          )}
-          <Button 
-            onClick={handleNext}
-            disabled={isSaving}
-            className="bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-[0_0_15px_rgba(223,255,0,0.4)] transition-all px-12 py-6 text-lg rounded-full"
-          >
-            {isSaving ? (
-              <><Loader2 className="w-5 h-5 mr-2 animate-spin" />Saving...</>
-            ) : (
-              step === 5 ? 'Start Matching' : 'Next'
-            )}
-          </Button>
-          {saveError && (
-            <p className="text-destructive text-sm mt-3">{saveError}</p>
-          )}
-        </div>
-      </div>
+      </main>
     </div>
   )
 }

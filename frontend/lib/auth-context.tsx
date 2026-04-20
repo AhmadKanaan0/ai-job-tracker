@@ -21,8 +21,8 @@ interface AuthState {
 }
 
 interface AuthContextValue extends AuthState {
-  login: (payload: LoginPayload) => Promise<void>;
-  register: (payload: RegisterPayload) => Promise<void>;
+  login: (payload: LoginPayload) => Promise<User>;
+  register: (payload: RegisterPayload) => Promise<User>;
   logout: () => void;
   updateProfile: (payload: UserUpdate) => Promise<User>;
   setUser: (user: User) => void;
@@ -68,6 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (payload: LoginPayload) => {
       const data = await api.post<Token>("/auth/login", payload);
       handleAuthResponse(data);
+      return data.user;
     },
     [handleAuthResponse],
   );
@@ -76,6 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (payload: RegisterPayload) => {
       const data = await api.post<Token>("/auth/register", payload);
       handleAuthResponse(data);
+      return data.user;
     },
     [handleAuthResponse],
   );

@@ -29,6 +29,7 @@ class UserUpdate(BaseModel):
     skills: Optional[List[str]] = None
     has_disability: Optional[str] = None
     gender: Optional[str] = None
+    setup_completed: Optional[bool] = None
 
 
 class UserOut(BaseModel):
@@ -56,6 +57,10 @@ class UserOut(BaseModel):
     # Equal Employment
     has_disability: Optional[str] = None
     gender: Optional[str] = None
+
+    # Onboarding state
+    setup_completed: bool = False
+    has_cv: bool = False
 
     class Config:
         from_attributes = True

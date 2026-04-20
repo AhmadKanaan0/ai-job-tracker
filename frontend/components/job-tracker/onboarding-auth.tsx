@@ -31,10 +31,19 @@ export function OnboardingAuth() {
     try {
       if (isSignUp) {
         await register({ email, password, full_name: fullName || undefined })
+        // After signup, always go to onboarding for first CV upload
+        router.push("/onboarding")
       } else {
-        await login({ email, password })
+        const user = await login({ email, password })
+        // After login, route based on state
+        if (!user.has_cv) {
+          router.push("/onboarding")
+        } else if (!user.setup_completed) {
+          router.push("/setup")
+        } else {
+          router.push("/dashboard")
+        }
       }
-      router.push("/onboarding")
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.detail)

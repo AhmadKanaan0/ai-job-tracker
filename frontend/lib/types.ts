@@ -24,26 +24,29 @@ export interface User {
   skills: string[] | null;
   has_disability: string | null;
   gender: string | null;
+  setup_completed: boolean;
+  has_cv: boolean;
 }
 
 export interface Education {
   schoolName: string;
   major: string;
   degreeType: string;
-  gpa: string;
+  gpa?: string;
   startDate: string;
-  endDate: string;
+  endDate?: string;
   currentlyStudying: boolean;
 }
 
 export interface Experience {
   jobTitle: string;
   company: string;
-  location: string;
+  jobType?: string;
+  location?: string;
   startDate: string;
-  endDate: string;
+  endDate?: string;
   currentlyWorking: boolean;
-  summary: string;
+  summary?: string;
   descriptions: string[];
 }
 
@@ -62,6 +65,7 @@ export interface UserUpdate {
   skills?: string[];
   has_disability?: string;
   gender?: string;
+  setup_completed?: boolean;
 }
 
 export interface RegisterPayload {

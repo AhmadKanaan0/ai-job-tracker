@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { UploadCloud, FileText, CheckCircle2, ArrowRight, Loader2, AlertCircle } from "lucide-react"
@@ -9,14 +9,23 @@ import { useAuth } from "@/lib/auth-context"
 
 export function OnboardingCVUpload() {
   const router = useRouter()
-  const { isAuthenticated, isLoading: authLoading, refreshUser } = useAuth()
+  const { isAuthenticated, isLoading: authLoading, refreshUser, user } = useAuth()
   const uploadCV = useUploadCV()
   const [isHovering, setIsHovering] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   
-  // Redirect to auth if not logged in
-  if (!authLoading && !isAuthenticated) {
-    router.push("/auth")
+  // Redirect based on auth state
+  useEffect(() => {
+    if (!authLoading) {
+      if (!isAuthenticated) {
+        router.push("/auth")
+      } else if (user?.has_cv) {
+        router.push("/setup")
+      }
+    }
+  }, [authLoading, isAuthenticated, user, router])
+
+  if (authLoading || (!isAuthenticated && !authLoading) || (user?.has_cv && !authLoading)) {
     return null
   }
 

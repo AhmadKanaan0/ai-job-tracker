@@ -15,6 +15,7 @@ import {
 
 import { cn } from '@/lib/utils'
 import { Label } from '@/components/ui/label'
+import { AlertCircle } from 'lucide-react'
 
 const Form = FormProvider
 
@@ -80,7 +81,7 @@ function FormItem({ className, ...props }: React.ComponentProps<'div'>) {
     <FormItemContext.Provider value={{ id }}>
       <div
         data-slot="form-item"
-        className={cn('grid gap-2', className)}
+        className={cn('grid gap-2 relative pb-6', className)}
         {...props}
       />
     </FormItemContext.Provider>
@@ -89,18 +90,26 @@ function FormItem({ className, ...props }: React.ComponentProps<'div'>) {
 
 function FormLabel({
   className,
+  required,
+  children,
   ...props
-}: React.ComponentProps<typeof LabelPrimitive.Root>) {
+}: React.ComponentProps<typeof LabelPrimitive.Root> & { required?: boolean }) {
   const { error, formItemId } = useFormField()
 
   return (
     <Label
       data-slot="form-label"
       data-error={!!error}
-      className={cn('data-[error=true]:text-destructive', className)}
+      className={cn(
+        'data-[error=true]:text-destructive transition-colors duration-200',
+        className
+      )}
       htmlFor={formItemId}
       {...props}
-    />
+    >
+      {children}
+      {required && <span className="text-destructive ml-1">*</span>}
+    </Label>
   )
 }
 
@@ -144,14 +153,17 @@ function FormMessage({ className, ...props }: React.ComponentProps<'p'>) {
   }
 
   return (
-    <p
-      data-slot="form-message"
-      id={formMessageId}
-      className={cn('text-destructive text-sm', className)}
-      {...props}
-    >
-      {body}
-    </p>
+    <div className="absolute bottom-0 left-0 flex items-center gap-2 animate-in fade-in slide-in-from-top-0.5 duration-200">
+      <AlertCircle className="w-3.5 h-3.5 text-destructive shrink-0" />
+      <p
+        data-slot="form-message"
+        id={formMessageId}
+        className={cn('text-destructive text-[12px] font-medium leading-none truncate', className)}
+        {...props}
+      >
+        {body}
+      </p>
+    </div>
   )
 }
 

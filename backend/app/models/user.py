@@ -31,6 +31,9 @@ class User(Base):
     has_disability = Column(String, nullable=True)
     gender = Column(String, nullable=True)
 
+    # Onboarding state
+    setup_completed = Column(Boolean, default=False)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

@@ -12,12 +12,14 @@ import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   ArrowLeft, ArrowRight, HelpCircle, CheckCircle2, Circle,
-  AlertCircle, XCircle, Building2, FileText, ChevronDown, Info
+  AlertCircle, XCircle, Building2, FileText, ChevronDown, Info, Zap
 } from "lucide-react"
 
 interface ResumeDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  jobId: number;
+  cvId: number;
 }
 
 const ALL_SKILLS = [
@@ -26,15 +28,45 @@ const ALL_SKILLS = [
   "Android Development", "Kotlin", "Shopify Integration"
 ]
 
-const MATCHED_SKILLS = ["React", "TypeScript", "NodeJS", "NestJS", "PostgreSQL", "Redis", "AWS"]
-const UNMATCHED_SKILLS = ["SCSS", "JavaScript", "Python", "DynamoDB", "AWS CDK", "Elasticsearch", "Solr", "OpenSearch", "Android Development", "Kotlin", "Shopify Integration"]
+import { useFullAnalysis, useFixCV } from "@/hooks/use-analysis";
+import { toast } from "sonner";
+import type { Analysis } from "@/lib/types";
 
-export function ResumeDrawer({ open, onOpenChange }: ResumeDrawerProps) {
+export function ResumeDrawer({ open, onOpenChange, jobId, cvId }: ResumeDrawerProps) {
   const [step, setStep] = useState(1)
+  const [analysis, setAnalysis] = useState<Analysis | null>(null)
 
-  const handleClose = (val: boolean) => {
+  const fullAnalysisMutation = useFullAnalysis()
+  const fixCvMutation = useFixCV()
+
+  const handleClose = async (val: boolean) => {
+    if (val && !analysis) {
+      try {
+        const result = await fullAnalysisMutation.mutateAsync({
+          job_id: jobId,
+          cv_id: cvId
+        })
+        setAnalysis(result)
+      } catch (err: any) {
+        toast.error(err.message || "Failed to analyze resume")
+      }
+    }
     if (!val) setStep(1)
     onOpenChange(val)
+  }
+
+  const handleFixCv = async () => {
+    try {
+      const result = await fixCvMutation.mutateAsync({
+        job_id: jobId,
+        cv_id: cvId
+      })
+      setAnalysis(result)
+      setStep(3)
+      toast.success("Resume optimized!")
+    } catch (err: any) {
+      toast.error(err.message || "Failed to optimize resume")
+    }
   }
 
   return (
@@ -79,27 +111,47 @@ export function ResumeDrawer({ open, onOpenChange }: ResumeDrawerProps) {
             {/* Match Score Header */}
             <div className="flex items-start justify-between">
               <div>
-                <h2 className="text-2xl font-bold mb-2">Your Resume is a Low Match for This Job</h2>
+                <h2 className="text-2xl font-bold mb-2">
+                  {fullAnalysisMutation.isPending 
+                    ? "Analyzing your fit..." 
+                    : analysis?.match_score && analysis.match_score < 60 
+                    ? "Your Resume is a Low Match for This Job"
+                    : "Your Resume is a Strong Match!"}
+                </h2>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Info className="w-4 h-4 text-primary" />
-                  Resumes under 6.0 are likely to be filtered out — we&apos;ll help you fix it fast.
+                  {analysis?.match_score && analysis.match_score < 60 
+                    ? "Resumes under 6.0 are likely to be filtered out — we'll help you fix it fast."
+                    : "Great job! Your profile aligns well with this position."}
                 </div>
               </div>
               {/* Score Gauge */}
               <div className="flex flex-col items-center flex-shrink-0 ml-4">
                 <div className="relative w-20 h-20">
-                  <svg className="w-full h-full -rotate-90">
-                    <circle cx="40" cy="40" r="34" stroke="currentColor" strokeWidth="6" fill="none" className="text-border/30" />
-                    <circle cx="40" cy="40" r="34" stroke="#ff6b35" strokeWidth="6" fill="none" strokeLinecap="round"
-                      strokeDasharray={`${2 * Math.PI * 34}`}
-                      strokeDashoffset={`${2 * Math.PI * 34 * (1 - 5.5 / 10)}`}
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-2xl font-bold" style={{ color: "#ff6b35" }}>5.5</span>
-                  </div>
+                  {fullAnalysisMutation.isPending ? (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                  ) : (
+                    <>
+                      <svg className="w-full h-full -rotate-90">
+                        <circle cx="40" cy="40" r="34" stroke="currentColor" strokeWidth="6" fill="none" className="text-border/30" />
+                        <circle cx="40" cy="40" r="34" stroke={analysis?.match_score && analysis.match_score > 70 ? "#22c55e" : "#ff6b35"} strokeWidth="6" fill="none" strokeLinecap="round"
+                          strokeDasharray={`${2 * Math.PI * 34}`}
+                          strokeDashoffset={`${2 * Math.PI * 34 * (1 - (analysis?.match_score || 0) / 100)}`}
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-2xl font-bold" style={{ color: analysis?.match_score && analysis.match_score > 70 ? "#22c55e" : "#ff6b35" }}>
+                          {(analysis?.match_score || 0) / 10}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
-                <span className="text-xs font-semibold mt-1" style={{ color: "#ff6b35" }}>Poor</span>
+                <span className="text-xs font-semibold mt-1" style={{ color: analysis?.match_score && analysis.match_score > 70 ? "#22c55e" : "#ff6b35" }}>
+                  {fullAnalysisMutation.isPending ? "Calculating..." : analysis?.match_score && analysis.match_score > 70 ? "Good" : "Poor"}
+                </span>
               </div>
             </div>
 
@@ -139,26 +191,24 @@ export function ResumeDrawer({ open, onOpenChange }: ResumeDrawerProps) {
 
               {/* Industry Experience */}
               <div className="flex items-start px-5 py-4 gap-4">
-                <span className="text-sm font-medium w-36 flex-shrink-0 mt-0.5">Industry Experience</span>
+                <span className="text-sm font-medium w-36 flex-shrink-0 mt-0.5">Strategy</span>
                 <AlertCircle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
-                <div className="flex flex-wrap gap-1.5 flex-1">
-                  {["Healthcare", "Wellness", "Medical Services", "Health", "Fitness Services"].map(tag => (
-                    <Badge key={tag} variant="outline" className="text-xs font-normal border-border/50 bg-muted/20">{tag}</Badge>
-                  ))}
+                <div className="flex-1 text-sm text-muted-foreground">
+                  {analysis?.level_strategy || "Analysis in progress..."}
                 </div>
               </div>
 
               {/* Job Keywords */}
               <div className="flex items-start px-5 py-4 gap-4">
-                <span className="text-sm font-medium w-36 flex-shrink-0 mt-0.5">Job Keywords (7/18)</span>
+                <span className="text-sm font-medium w-36 flex-shrink-0 mt-0.5">Keywords Match</span>
                 <AlertCircle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
                 <div className="flex flex-wrap gap-1.5 flex-1">
-                  {MATCHED_SKILLS.map(s => (
+                  {(analysis?.matched_skills || []).map((s: string) => (
                     <Badge key={s} className="bg-primary/15 text-primary border border-primary/25 text-xs font-normal">
                       <CheckCircle2 className="w-3 h-3 mr-1" />{s}
                     </Badge>
                   ))}
-                  {UNMATCHED_SKILLS.slice(0, 4).map(s => (
+                  {(analysis?.missing_skills || []).slice(0, 8).map((s: string) => (
                     <Badge key={s} variant="outline" className="text-xs font-normal border-border/50 bg-muted/20">{s}</Badge>
                   ))}
                 </div>
@@ -246,13 +296,17 @@ export function ResumeDrawer({ open, onOpenChange }: ResumeDrawerProps) {
 
         {/* ========== STEP 3: Review ========== */}
         {step === 3 && (
-          <div className="p-6 pb-28 flex flex-col items-center justify-center min-h-[400px]">
-            <div className="text-center space-y-4">
+          <div className="p-6 pb-28 flex flex-col items-center justify-start min-h-[400px]">
+            <div className="text-center space-y-4 mb-8">
               <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center mx-auto">
                 <CheckCircle2 className="w-8 h-8 text-primary" />
               </div>
-              <h2 className="text-2xl font-bold">Your New Resume is Ready!</h2>
-              <p className="text-muted-foreground max-w-md">We&apos;ve optimized your resume to better match this position. Download it below or apply directly.</p>
+              <h2 className="text-2xl font-bold">Your Optimized CV is Ready!</h2>
+              <p className="text-muted-foreground max-w-md">We&apos;ve tailored your professional summary and experience to highlight the most relevant skills for this role.</p>
+            </div>
+
+            <div className="w-full bg-card rounded-xl border border-border/50 p-6 font-mono text-xs whitespace-pre-wrap max-h-[500px] overflow-y-auto">
+              {analysis?.fixed_cv_text}
             </div>
           </div>
         )}
@@ -260,18 +314,31 @@ export function ResumeDrawer({ open, onOpenChange }: ResumeDrawerProps) {
         {/* Sticky Footer */}
         <div className="sticky bottom-0 bg-background/95 backdrop-blur-xl border-t border-border/50 p-4 flex justify-center items-center gap-3">
           {step > 1 && (
-            <Button variant="outline" size="icon" className="h-11 w-11 rounded-full border-border/50" onClick={() => setStep(s => s - 1)}>
+            <Button variant="outline" size="icon" className="h-11 w-11 rounded-full border-border/50" onClick={() => setStep((s: number) => s - 1)}>
               <ArrowLeft className="w-5 h-5" />
             </Button>
           )}
           {step < 3 ? (
-            <Button onClick={() => setStep(s => s + 1)} className="h-11 px-8 rounded-full bg-primary text-primary-foreground font-bold hover:bg-primary/90 shadow-[0_0_12px_rgba(223,255,0,0.25)] hover:shadow-[0_0_20px_rgba(223,255,0,0.4)] transition-all">
-              {step === 1 ? "Continue" : "Generate My New Resume"}
-              <ArrowRight className="w-4 h-4 ml-2" />
+            <Button 
+              onClick={() => step === 1 ? setStep(2) : handleFixCv()} 
+              disabled={fullAnalysisMutation.isPending || fixCvMutation.isPending}
+              className="h-11 px-8 rounded-full bg-primary text-primary-foreground font-bold hover:bg-primary/90 shadow-[0_0_12px_rgba(223,255,0,0.25)] hover:shadow-[0_0_20px_rgba(223,255,0,0.4)] transition-all"
+            >
+              {fullAnalysisMutation.isPending || fixCvMutation.isPending ? (
+                <>
+                  <Zap className="w-4 h-4 mr-2 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  {step === 1 ? "Continue" : "Generate My New Resume"}
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </>
+              )}
             </Button>
           ) : (
             <Button className="h-11 px-8 rounded-full bg-primary text-primary-foreground font-bold hover:bg-primary/90 shadow-[0_0_12px_rgba(223,255,0,0.25)] hover:shadow-[0_0_20px_rgba(223,255,0,0.4)] transition-all">
-              Download Resume
+              Download Optimized CV
             </Button>
           )}
         </div>

@@ -7,7 +7,7 @@ from app.core.security import get_current_user
 from app.models.user import User
 from app.models.job import Job
 from app.schemas.jobs import JobOut, JobSearch, ScrapeRequest
-from app.services import scraper
+from app.services import scraper, ai_service
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 
@@ -133,3 +133,33 @@ def get_job(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+
+@router.post("/{job_id}/optimize", response_model=JobOut)
+async def optimize_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Use AI to reorganize the job description into a structured format.
+    """
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    if not job.description:
+        raise HTTPException(status_code=400, detail="Job has no description to optimize")
+    
+    # Skip if already formatted (optional, but user wants it checked)
+    # if job.formatted_description:
+    #     return job
+
+    try:
+        optimized = ai_service.optimize_job_description(job.description)
+        job.formatted_description = optimized
+        db.commit()
+        db.refresh(job)
+        return job
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"AI service error: {e}")

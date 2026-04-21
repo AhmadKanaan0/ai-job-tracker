@@ -40,6 +40,8 @@ class JobOut(BaseModel):
     responsibilities: Optional[List[str]]
     scraped_at: datetime
     posted_at: Optional[datetime]
+    formatted_description: Optional[str] = None
+    match_score: Optional[float] = None
 
     class Config:
         from_attributes = True

@@ -11,12 +11,40 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CheckCircle2, Download, Sparkles, ArrowUpCircle, Edit3, Zap } from "lucide-react"
 
+import { useGenerateCoverLetter } from "@/hooks/use-cover-letter";
+import { useState, useEffect } from "react";
+import { toast } from "sonner";
+import type { CoverLetter } from "@/lib/types";
+
 interface CoverLetterDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  jobId: number;
+  cvId: number;
 }
 
-export function CoverLetterDrawer({ open, onOpenChange }: CoverLetterDrawerProps) {
+export function CoverLetterDrawer({ open, onOpenChange, jobId, cvId }: CoverLetterDrawerProps) {
+  const [generatedLetter, setGeneratedLetter] = useState<CoverLetter | null>(null);
+  const generateMutation = useGenerateCoverLetter();
+
+  useEffect(() => {
+    if (open && !generatedLetter) {
+      handleGenerate();
+    }
+  }, [open]);
+
+  const handleGenerate = async () => {
+    try {
+      const letter = await generateMutation.mutateAsync({
+        job_id: jobId,
+        cv_id: cvId,
+        tone: "professional"
+      });
+      setGeneratedLetter(letter);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to generate cover letter");
+    }
+  };
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -56,13 +84,23 @@ export function CoverLetterDrawer({ open, onOpenChange }: CoverLetterDrawerProps
               </div>
 
               {/* Letter Body */}
-              <div className="space-y-4 text-sm leading-relaxed text-foreground/85">
-                <p className="font-medium">Dear Hiring Manager,</p>
-                <p>I am applying for the Senior Software Engineer (Full Stack) role at MaRe Head Spa System, attracted by your mission to innovate digital solutions for hair salons and wellness centers. The opportunity to drive technical strategy and product lifecycle for a health-focused platform resonates with my experience delivering scalable full-stack systems in demanding environments.</p>
-                <p>At Sword Group, I delivered enterprise-grade applications built with React and Spring Boot, optimizing PostgreSQL-backed systems for performance and stability. By integrating OpenAI to automate backend class generation, I reduced manual development time by 20 percent and improved report generation speed by 35 percent for an Islamic institute management platform.</p>
-                <p>My expertise extends across NestJS, Node.js, and advanced use of git, covering end-to-end feature ownership from development to CI/CD integration with GitHub Actions. I have also worked with IAM, Kubernetes, and cloud infrastructure provisioning, aligning well with your needs for security and modern DevOps tooling.</p>
-                <p>Thank you for considering my application; I welcome the opportunity to discuss how I can contribute to MaRe&apos;s next phase of growth.</p>
-                <p className="pt-3 font-semibold">Ahmad Kanaan</p>
+              <div className="space-y-4 text-sm leading-relaxed text-foreground/85 min-h-[400px] flex flex-col justify-center">
+                {generateMutation.isPending ? (
+                  <div className="space-y-4 animate-pulse">
+                    <div className="h-4 bg-muted rounded w-1/4"></div>
+                    <div className="h-4 bg-muted rounded w-full"></div>
+                    <div className="h-4 bg-muted rounded w-full"></div>
+                    <div className="h-4 bg-muted rounded w-3/4"></div>
+                    <div className="h-4 bg-muted rounded w-full"></div>
+                    <div className="h-4 bg-muted rounded w-1/2"></div>
+                  </div>
+                ) : generatedLetter ? (
+                  <div className="whitespace-pre-wrap">
+                    {generatedLetter.content}
+                  </div>
+                ) : (
+                  <p className="text-center text-muted-foreground italic">Failed to generate letter.</p>
+                )}
               </div>
 
               {/* Page Count */}
@@ -86,7 +124,11 @@ export function CoverLetterDrawer({ open, onOpenChange }: CoverLetterDrawerProps
               <div className="bg-muted/30 rounded-xl rounded-tl-sm p-3.5 border border-border/50 text-sm mb-5">
                 <span className="flex items-start gap-2">
                   <CheckCircle2 className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                  <span className="text-foreground/90">Your cover letter is ready! Want to tweak the tone, length, or any details? Just tell me.</span>
+                  <span className="text-foreground/90">
+                    {generateMutation.isPending 
+                      ? "I'm crafting your perfect cover letter... This will just take a moment."
+                      : "Your cover letter is ready! Want to tweak the tone, length, or any details? Just tell me."}
+                  </span>
                 </span>
               </div>
 

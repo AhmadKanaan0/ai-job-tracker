@@ -13,6 +13,12 @@ def get_user_out(user: User) -> UserOut:
     """Helper to convert User model to UserOut schema with computed fields."""
     out = UserOut.model_validate(user)
     out.has_cv = len(user.cvs) > 0
+    
+    # Ensure defaults for legacy users
+    if out.setup_completed is None: out.setup_completed = False
+    if out.open_to_remote is None: out.open_to_remote = True
+    if out.needs_visa is None: out.needs_visa = False
+    
     return out
 
 

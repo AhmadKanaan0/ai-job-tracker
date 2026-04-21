@@ -6,43 +6,67 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Brain, Zap, CheckCircle, AlertCircle, Send } from "lucide-react"
 
-const jobRequirements = [
-  { skill: "React", status: "match" as const },
-  { skill: "TypeScript", status: "match" as const },
-  { skill: "Node.js", status: "match" as const },
-  { skill: "GraphQL", status: "match" as const },
-  { skill: "Kubernetes", status: "missing" as const },
-  { skill: "AWS Lambda", status: "partial" as const },
-  { skill: "5+ years experience", status: "match" as const },
-  { skill: "Team leadership", status: "partial" as const },
-]
-
-const cvDiff = [
-  { type: "remove", text: "3 years of experience in frontend development" },
-  { type: "add", text: "5+ years of experience building scalable web applications" },
-  { type: "context", text: "" },
-  { type: "remove", text: "Familiar with React and JavaScript" },
-  { type: "add", text: "Expert-level proficiency in React, TypeScript, and modern JavaScript ecosystems" },
-  { type: "context", text: "" },
-  { type: "add", text: "Experience deploying applications to AWS (Lambda, EC2, S3)" },
-  { type: "context", text: "" },
-  { type: "remove", text: "Worked on team projects" },
-  { type: "add", text: "Led cross-functional teams of 5+ engineers, mentoring junior developers" },
-]
+import { useScrapeJob } from "@/hooks/use-jobs"
+import { useFullAnalysis } from "@/hooks/use-analysis"
+import { useActiveCV } from "@/hooks/use-cv"
+import { useAddToTracker, useTrackedJobs } from "@/hooks/use-tracker"
+import { toast } from "sonner"
+import type { Analysis } from "@/lib/types"
+import { useRouter } from "next/navigation"
 
 export function AIAnalyzer() {
+  const router = useRouter()
   const [url, setUrl] = useState("")
-  const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [analyzed, setAnalyzed] = useState(false)
+  const [analysisData, setAnalysisData] = useState<Analysis | null>(null)
+  
+  const { data: activeCv } = useActiveCV()
+  const { data: trackedJobs = [] } = useTrackedJobs()
+  const scrapeJob = useScrapeJob()
+  const fullAnalysis = useFullAnalysis()
+  const addToTracker = useAddToTracker()
 
-  const handleAnalyze = () => {
+  const isAnalyzing = scrapeJob.isPending || fullAnalysis.isPending || addToTracker.isPending
+  const isTracked = analysisData && trackedJobs.some(tj => tj.job.id === analysisData.job_id)
+
+  const handleAnalyze = async () => {
     if (!url) return
-    setIsAnalyzing(true)
-    setTimeout(() => {
-      setIsAnalyzing(false)
-      setAnalyzed(true)
-    }, 2000)
+    if (!activeCv) {
+      toast.error("Please upload and activate a CV first.")
+      return
+    }
+
+    try {
+      // 1. Scrape the job URL to get/create a Job record
+      const job = await scrapeJob.mutateAsync({ url })
+      
+      // 2. Perform full AI analysis
+      const analysis = await fullAnalysis.mutateAsync({
+        job_id: job.id,
+        cv_id: activeCv.id
+      })
+      
+      setAnalysisData(analysis)
+      toast.success("Analysis complete!")
+    } catch (err: any) {
+      toast.error(err.message || "Failed to analyze job")
+    }
   }
+
+  const handleSaveToTracker = async () => {
+    if (!analysisData) return
+    try {
+      await addToTracker.mutateAsync({ job_id: analysisData.job_id })
+      toast.success("Job added to tracker!")
+    } catch (err: any) {
+      toast.error(err.message || "Failed to add to tracker")
+    }
+  }
+
+  // Map backend skills to UI format
+  const jobRequirements = analysisData ? [
+    ...(analysisData.matched_skills || []).map(s => ({ skill: s, status: "match" as const })),
+    ...(analysisData.missing_skills || []).map(s => ({ skill: s, status: "missing" as const }))
+  ] : []
 
   return (
     <div className="space-y-6">
@@ -76,7 +100,7 @@ export function AIAnalyzer() {
         </div>
       </div>
 
-      {analyzed && (
+      {analysisData && (
         <>
           {/* Split View */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -88,7 +112,7 @@ export function AIAnalyzer() {
               </h3>
               <div className="space-y-3">
                 <p className="text-sm text-muted-foreground mb-4">
-                  Required skills and qualifications extracted from job posting:
+                  {analysisData.role_summary}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {jobRequirements.map((req, i) => (
@@ -112,10 +136,10 @@ export function AIAnalyzer() {
                 <div className="mt-6 p-4 rounded-xl bg-muted/30">
                   <div className="flex justify-between text-sm mb-2">
                     <span className="text-muted-foreground">Overall Match</span>
-                    <span className="text-primary font-bold">87%</span>
+                    <span className="text-primary font-bold">{analysisData.match_score}%</span>
                   </div>
                   <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-primary rounded-full" style={{ width: '87%' }} />
+                    <div className="h-full bg-primary rounded-full" style={{ width: `${analysisData.match_score}%` }} />
                   </div>
                 </div>
               </div>
@@ -128,40 +152,45 @@ export function AIAnalyzer() {
                 CV Optimization Diff
               </h3>
               <div className="bg-muted/30 rounded-xl p-4 font-mono text-sm space-y-1 max-h-80 overflow-y-auto">
-                {cvDiff.map((line, i) => (
-                  <div 
-                    key={i}
-                    className={
-                      line.type === "remove" 
-                        ? "bg-red-500/20 text-red-400 px-2 py-1 rounded line-through"
-                        : line.type === "add"
-                        ? "bg-green-500/20 text-green-400 px-2 py-1 rounded"
-                        : "h-2"
-                    }
-                  >
-                    {line.type === "remove" && "- "}
-                    {line.type === "add" && "+ "}
-                    {line.text}
+                {analysisData.fixed_cv_text ? (
+                  <div className="whitespace-pre-wrap text-xs opacity-80">
+                    {analysisData.fixed_cv_text}
                   </div>
-                ))}
+                ) : (
+                  <p className="text-muted-foreground italic">No CV optimization suggested for this role.</p>
+                )}
               </div>
             </div>
           </div>
 
           {/* Action Button */}
           <div className="flex justify-center">
-            <Button 
-              size="lg"
-              className="bg-primary text-primary-foreground hover:bg-primary/90 px-12 py-6 text-lg animate-pulse-glow"
-            >
-              <Send className="w-5 h-5 mr-2" />
-              Approve & Auto-Apply
-            </Button>
+            {isTracked ? (
+              <Button 
+                size="lg"
+                variant="outline"
+                className="px-12 py-6 text-lg border-primary text-primary hover:bg-primary/10"
+                onClick={() => router.push("/dashboard/tracker")}
+              >
+                <CheckCircle className="w-5 h-5 mr-2" />
+                In Your Tracker
+              </Button>
+            ) : (
+              <Button 
+                size="lg"
+                className="bg-primary text-primary-foreground hover:bg-primary/90 px-12 py-6 text-lg animate-pulse-glow"
+                onClick={handleSaveToTracker}
+                disabled={isAnalyzing}
+              >
+                <Send className="w-5 h-5 mr-2" />
+                {addToTracker.isPending ? "Saving..." : "Save to My Tracker"}
+              </Button>
+            )}
           </div>
         </>
       )}
 
-      {!analyzed && !isAnalyzing && (
+      {!analysisData && !isAnalyzing && (
         <div className="glass-card rounded-2xl p-12 text-center">
           <Brain className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
           <h3 className="text-xl font-semibold mb-2">AI-Powered Job Analysis</h3>

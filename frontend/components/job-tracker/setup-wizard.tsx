@@ -30,8 +30,6 @@ import {
   X, 
   Plus,
   Trash2,
-  Upload,
-  FileText,
   Check,
   User as UserIcon,
   GraduationCap,
@@ -42,7 +40,6 @@ import {
   ChevronLeft,
   Sparkles,
   ChevronsUpDown,
-  Search,
   AlertCircle
 } from "lucide-react"
 import { useForm, useFieldArray } from "react-hook-form"
@@ -52,7 +49,6 @@ import { DatePicker } from "@/components/ui/date-picker"
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -95,7 +91,6 @@ const setupSchema = z.object({
     phone: z.string().optional(),
     country: z.string().min(1, "Country is required"),
     city: z.string().min(1, "City is required"),
-    county: z.string().optional(),
     postalCode: z.string().optional(),
     addressLine: z.string().optional(),
   }),
@@ -147,7 +142,6 @@ export function SetupWizard() {
         phone: values.personal.phone || undefined,
         country: values.personal.country,
         city: values.personal.city,
-        county: values.personal.county || undefined,
         postal_code: values.personal.postalCode || undefined,
         address_line: values.personal.addressLine || undefined,
         educations: values.educations,
@@ -189,7 +183,6 @@ export function SetupWizard() {
         phone: user?.phone || "",
         country: user?.country || "",
         city: user?.city || "",
-        county: user?.county || "",
         postalCode: user?.postal_code || "",
         addressLine: user?.address_line || "",
       },
@@ -248,7 +241,6 @@ export function SetupWizard() {
           phone: user.phone || "",
           country: user.country || "",
           city: user.city || "",
-          county: user.county || "",
           postalCode: user.postal_code || "",
           addressLine: user.address_line || ""
         },

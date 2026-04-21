@@ -61,3 +61,16 @@ export function useScrapeJob() {
     },
   });
 }
+
+export function useOptimizeJob() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (jobId: number) =>
+      api.post<Job>(`/jobs/${jobId}/optimize`),
+    onSuccess: (data) => {
+      qc.setQueryData(jobKeys.detail(data.id), data);
+      qc.invalidateQueries({ queryKey: jobKeys.all });
+    },
+  });
+}

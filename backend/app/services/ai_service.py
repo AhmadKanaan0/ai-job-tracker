@@ -281,3 +281,26 @@ Return a JSON object with exactly these keys matching this schema:
 """
     raw = _ask(system, user, max_tokens=3000)
     return _parse_json(raw)
+
+
+# ── 6. Optimize Job Description ──────────────────────────────────────────────
+
+def optimize_job_description(description: str) -> str:
+    """
+    Reorganize messy job descriptions into a structured, organized format.
+    Uses Markdown for clear titles and bullet points.
+    """
+    system = (
+        "You are a professional editor. Your task is to take a messy, unorganized job description "
+        "and rewrite it into a beautifully structured Markdown format. "
+        "Use clear headings (e.g., # Role Overview, # Responsibilities, # Qualifications, # Benefits). "
+        "Use bullet points for lists. Preserve all original information but make it highly readable. "
+        "Return ONLY the formatted Markdown — no commentary."
+    )
+    user = f"""
+--- MESSY JOB DESCRIPTION ---
+{description}
+
+Reorganize this description now:
+"""
+    return _ask(system, user, max_tokens=2500)

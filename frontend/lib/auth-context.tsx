@@ -1,5 +1,6 @@
 "use client";
 
+import { toast } from "sonner";
 import {
   createContext,
   useCallback,
@@ -89,9 +90,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updateProfile = useCallback(async (payload: UserUpdate) => {
-    const updated = await api.patch<User>("/auth/me", payload);
-    setUser(updated);
-    return updated;
+    try {
+      const updated = await api.patch<User>("/auth/me", payload);
+      setUser(updated);
+      toast.success("Profile updated successfully");
+      return updated;
+    } catch (err) {
+      toast.error("Failed to update profile");
+      throw err;
+    }
   }, []);
 
   const refreshUser = useCallback(async () => {

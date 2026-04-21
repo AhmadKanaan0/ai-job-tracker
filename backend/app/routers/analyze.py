@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -181,4 +182,24 @@ def analysis_history(
         .filter(JobAnalysis.user_id == current_user.id)
         .order_by(JobAnalysis.created_at.desc())
         .all()
+    )
+
+
+@router.get("/{job_id}/{cv_id}", response_model=Optional[AnalysisOut])
+def get_analysis(
+    job_id: int,
+    cv_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Fetch the most recent analysis for a specific job + CV."""
+    return (
+        db.query(JobAnalysis)
+        .filter(
+            JobAnalysis.user_id == current_user.id,
+            JobAnalysis.job_id == job_id,
+            JobAnalysis.cv_id == cv_id,
+        )
+        .order_by(JobAnalysis.created_at.desc())
+        .first()
     )

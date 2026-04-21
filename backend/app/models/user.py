@@ -18,7 +18,6 @@ class User(Base):
     phone = Column(String, nullable=True)
     country = Column(String, nullable=True)
     city = Column(String, nullable=True)
-    county = Column(String, nullable=True)
     postal_code = Column(String, nullable=True)
     address_line = Column(String, nullable=True)
 
@@ -33,6 +32,13 @@ class User(Base):
 
     # Onboarding state
     setup_completed = Column(Boolean, default=False)
+    
+    # Job Preferences
+    desired_roles = Column(JSON, nullable=True)           # ["Full Stack Developer", "Frontend"]
+    preferred_job_types = Column(JSON, nullable=True)     # ["full-time", "contract"]
+    preferred_location = Column(String, nullable=True)
+    open_to_remote = Column(Boolean, default=True)
+    needs_visa = Column(Boolean, default=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

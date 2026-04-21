@@ -21,7 +21,6 @@ class UserUpdate(BaseModel):
     phone: Optional[str] = None
     country: Optional[str] = None
     city: Optional[str] = None
-    county: Optional[str] = None
     postal_code: Optional[str] = None
     address_line: Optional[str] = None
     educations: Optional[List[Dict[str, Any]]] = None
@@ -30,6 +29,13 @@ class UserUpdate(BaseModel):
     has_disability: Optional[str] = None
     gender: Optional[str] = None
     setup_completed: Optional[bool] = None
+    
+    # Job Preferences
+    desired_roles: Optional[List[str]] = None
+    preferred_job_types: Optional[List[str]] = None
+    preferred_location: Optional[str] = None
+    open_to_remote: Optional[bool] = None
+    needs_visa: Optional[bool] = None
 
 
 class UserOut(BaseModel):
@@ -45,7 +51,6 @@ class UserOut(BaseModel):
     phone: Optional[str] = None
     country: Optional[str] = None
     city: Optional[str] = None
-    county: Optional[str] = None
     postal_code: Optional[str] = None
     address_line: Optional[str] = None
 
@@ -59,8 +64,15 @@ class UserOut(BaseModel):
     gender: Optional[str] = None
 
     # Onboarding state
-    setup_completed: bool = False
+    setup_completed: Optional[bool] = False
     has_cv: bool = False
+
+    # Job Preferences
+    desired_roles: Optional[List[str]] = None
+    preferred_job_types: Optional[List[str]] = None
+    preferred_location: Optional[str] = None
+    open_to_remote: Optional[bool] = True
+    needs_visa: Optional[bool] = False
 
     class Config:
         from_attributes = True

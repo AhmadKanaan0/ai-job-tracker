@@ -7,6 +7,7 @@ import type { Analysis, AnalyzePayload, ATSPayload, FixCVPayload } from "@/lib/t
 export const analysisKeys = {
   all: ["analysis"] as const,
   history: () => [...analysisKeys.all, "history"] as const,
+  detail: (jobId: number, cvId: number) => [...analysisKeys.all, "detail", jobId, cvId] as const,
 };
 
 // ── Queries ────────────────────────────────────────────────────────────────
@@ -15,6 +16,14 @@ export function useAnalysisHistory() {
   return useQuery({
     queryKey: analysisKeys.history(),
     queryFn: () => api.get<Analysis[]>("/analyze/history"),
+  });
+}
+
+export function useAnalysis(jobId: number, cvId: number) {
+  return useQuery({
+    queryKey: analysisKeys.detail(jobId, cvId),
+    queryFn: () => api.get<Analysis | null>(`/analyze/${jobId}/${cvId}`),
+    enabled: !!jobId && !!cvId,
   });
 }
 

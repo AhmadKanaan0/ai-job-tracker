@@ -3,7 +3,8 @@
 import { Zap, LayoutDashboard, Compass, Brain, FileText, ListChecks, User, LogOut, Settings } from "lucide-react"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
+import { useAuth } from "@/lib/auth-context"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,6 +27,22 @@ const navItems = [
 
 export function MainSidebar({ onLogout }: MainSidebarProps) {
   const pathname = usePathname()
+  const router = useRouter()
+  const { user, logout } = useAuth()
+
+  const handleLogout = () => {
+    logout()
+    if (onLogout) onLogout()
+    router.push("/auth")
+  }
+
+  const userInitials = user?.first_name && user?.last_name 
+    ? `${user.first_name[0]}${user.last_name[0]}`.toUpperCase()
+    : user?.email?.[0].toUpperCase() || "U"
+
+  const fullName = user?.first_name && user?.last_name
+    ? `${user.first_name} ${user.last_name}`
+    : user?.email || "User"
   return (
     <div className="fixed left-0 top-0 h-full w-16 bg-sidebar flex flex-col items-center py-6 border-r border-sidebar-border z-50">
       {/* Logo */}
@@ -60,14 +77,14 @@ export function MainSidebar({ onLogout }: MainSidebarProps) {
       <div className="mt-auto">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="w-10 h-10 rounded-full bg-secondary/20 flex items-center justify-center text-secondary font-bold hover:bg-secondary/30 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-sidebar">
-              JD
+            <button className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold hover:bg-primary/20 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-sidebar">
+              {userInitials}
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="right" align="end" className="w-48 bg-popover border-border">
             <div className="px-2 py-1.5">
-              <p className="text-sm font-medium">John Doe</p>
-              <p className="text-xs text-muted-foreground">john@example.com</p>
+              <p className="text-sm font-medium truncate">{fullName}</p>
+              <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
             </div>
             <DropdownMenuSeparator className="bg-border" />
             <DropdownMenuItem asChild className="cursor-pointer">
@@ -82,7 +99,7 @@ export function MainSidebar({ onLogout }: MainSidebarProps) {
             </DropdownMenuItem>
             <DropdownMenuSeparator className="bg-border" />
             <DropdownMenuItem 
-              onClick={onLogout}
+              onClick={handleLogout}
               className="cursor-pointer text-destructive focus:text-destructive"
             >
               <LogOut className="w-4 h-4 mr-2" />

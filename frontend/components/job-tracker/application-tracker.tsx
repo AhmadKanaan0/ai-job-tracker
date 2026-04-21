@@ -61,59 +61,56 @@ import {
   SlidersHorizontal
 } from "lucide-react"
 
-type Status = "saved" | "applied" | "interviewing" | "offer" | "rejected"
+import { useTrackedJobs, useUpdateTracker, useRemoveFromTracker } from "@/hooks/use-tracker"
+import type { TrackedJob } from "@/lib/types"
+import { format } from "date-fns"
+import { toast } from "sonner"
+
+const statusConfig: Record<string, { label: string; className: string; icon: React.ReactNode }> = {
+  saved: { label: "Saved", className: "bg-muted text-muted-foreground border-muted", icon: <Clock className="w-3 h-3" /> },
+  applied: { label: "Applied", className: "bg-blue-500/20 text-blue-400 border-blue-500/30", icon: <CheckCircle className="w-3 h-3" /> },
+  phone_screen: { label: "Phone Screen", className: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30", icon: <Briefcase className="w-3 h-3" /> },
+  interview: { label: "Interview", className: "bg-secondary/20 text-secondary border-secondary/30", icon: <Briefcase className="w-3 h-3" /> },
+  take_home: { label: "Take Home", className: "bg-purple-500/20 text-purple-400 border-purple-500/30", icon: <Briefcase className="w-3 h-3" /> },
+  final_round: { label: "Final Round", className: "bg-orange-500/20 text-orange-400 border-orange-500/30", icon: <Briefcase className="w-3 h-3" /> },
+  offer: { label: "Offer", className: "bg-primary text-primary-foreground border-primary", icon: <CheckCircle className="w-3 h-3" /> },
+  accepted: { label: "Accepted", className: "bg-green-500/20 text-green-400 border-green-500/30", icon: <CheckCircle className="w-3 h-3" /> },
+  rejected: { label: "Rejected", className: "bg-destructive/20 text-destructive/80 border-destructive/30", icon: <XCircle className="w-3 h-3" /> },
+  ghosted: { label: "Ghosted", className: "bg-muted/50 text-muted-foreground/50 border-muted", icon: <XCircle className="w-3 h-3" /> },
+  withdrawn: { label: "Withdrawn", className: "bg-muted text-muted-foreground border-muted", icon: <XCircle className="w-3 h-3" /> },
+}
+
+const allStatuses = [
+  "saved",
+  "applied",
+  "phone_screen",
+  "interview",
+  "take_home",
+  "final_round",
+  "offer",
+  "accepted",
+  "rejected",
+  "ghosted",
+  "withdrawn",
+]
+const locations = ["All", "Remote", "Hybrid", "Onsite"]
+const PAGE_SIZES = [5, 10, 20, 50]
+
 type SortField = "date" | "match" | "company" | "status" | "salary"
 type SortDir = "asc" | "desc"
 
-interface Application {
-  id: number
-  jobTitle: string
-  company: string
-  location: string
-  salary: string
-  dateApplied: string
-  matchScore: number
-  status: Status
-  nextAction: string
-  description: string
-  requirements: string[]
-  responsibilities: string[]
-}
-
-const initialApplications: Application[] = [
-  { id: 1, jobTitle: "Senior Frontend Engineer", company: "Stripe", location: "Remote", salary: "$180k - $220k", dateApplied: "Apr 15, 2026", matchScore: 95, status: "interviewing", nextAction: "Technical interview Apr 20", description: "We are looking for a Senior Frontend Engineer to join our Payments team.", requirements: ["5+ years React", "TypeScript", "Payment systems"], responsibilities: ["Build UI components", "Collaborate with design", "Write tests"] },
-  { id: 2, jobTitle: "Full Stack Developer", company: "Vercel", location: "Remote", salary: "$160k - $200k", dateApplied: "Apr 14, 2026", matchScore: 92, status: "applied", nextAction: "Awaiting response", description: "Join Vercel to help build the future of web development.", requirements: ["Next.js experience", "TypeScript skills", "Database design"], responsibilities: ["Develop platform features", "Optimize performance", "Write docs"] },
-  { id: 3, jobTitle: "Software Engineer", company: "Linear", location: "San Francisco", salary: "$150k - $190k", dateApplied: "Apr 12, 2026", matchScore: 88, status: "interviewing", nextAction: "Final round Apr 18", description: "Linear is redefining how software teams work.", requirements: ["React/Redux", "GraphQL", "3+ years"], responsibilities: ["Build UI components", "Implement real-time features", "Optimize app"] },
-  { id: 4, jobTitle: "React Developer", company: "Notion", location: "New York", salary: "$170k - $210k", dateApplied: "Apr 10, 2026", matchScore: 85, status: "offer", nextAction: "Review offer letter", description: "Help us build the workspace of the future.", requirements: ["Expert React", "Canvas/SVG", "State management"], responsibilities: ["Build editor", "Implement collaboration", "Create libraries"] },
-  { id: 5, jobTitle: "Frontend Engineer", company: "Figma", location: "Remote", salary: "$155k - $195k", dateApplied: "Apr 8, 2026", matchScore: 78, status: "rejected", nextAction: "Request feedback", description: "Join Figma's design tools team.", requirements: ["WebGL/Canvas", "C++/Rust preferred", "Performance"], responsibilities: ["Build rendering features", "Optimize canvas", "Design tools"] },
-  { id: 6, jobTitle: "Full Stack Engineer", company: "Discord", location: "San Francisco", salary: "$165k - $205k", dateApplied: "Apr 5, 2026", matchScore: 72, status: "applied", nextAction: "Follow up Apr 19", description: "Build features that connect millions.", requirements: ["React and Node.js", "Real-time systems", "Scalability"], responsibilities: ["Build chat features", "Voice/video", "Scale infrastructure"] },
-  { id: 7, jobTitle: "Senior Developer", company: "Shopify", location: "Remote", salary: "$175k - $215k", dateApplied: "Apr 3, 2026", matchScore: 90, status: "interviewing", nextAction: "Coding challenge due Apr 17", description: "Help millions of merchants succeed.", requirements: ["E-commerce", "Ruby/Rails", "API design", "5+ years"], responsibilities: ["Build merchant tools", "Design APIs", "Lead projects"] },
-  { id: 8, jobTitle: "Software Engineer", company: "GitHub", location: "Remote", salary: "$160k - $200k", dateApplied: "Apr 1, 2026", matchScore: 87, status: "saved", nextAction: "Complete application", description: "Build tools that help developers collaborate.", requirements: ["Git expertise", "Web dev skills", "API design"], responsibilities: ["Build GitHub features", "Improve dev tools", "Support community"] },
-  { id: 9, jobTitle: "Platform Engineer", company: "Cloudflare", location: "Austin", salary: "$170k - $220k", dateApplied: "Mar 28, 2026", matchScore: 82, status: "applied", nextAction: "Phone screen scheduled", description: "Help build a better internet.", requirements: ["Systems programming", "Networking", "Rust/Go"], responsibilities: ["Build edge services", "Optimize latency", "Security"] },
-  { id: 10, jobTitle: "Staff Engineer", company: "Netflix", location: "Los Gatos", salary: "$250k - $350k", dateApplied: "Mar 25, 2026", matchScore: 75, status: "rejected", nextAction: "Reapply in 6 months", description: "Work on streaming at scale.", requirements: ["10+ years", "Distributed systems", "Leadership"], responsibilities: ["Architecture", "Mentorship", "Strategic decisions"] },
-]
-
-const statusConfig: Record<Status, { label: string; className: string; icon: React.ReactNode }> = {
-  saved: { label: "Saved", className: "bg-muted text-muted-foreground border-muted", icon: <Clock className="w-3 h-3" /> },
-  applied: { label: "Applied", className: "bg-accent/20 text-accent border-accent/30", icon: <CheckCircle className="w-3 h-3" /> },
-  interviewing: { label: "Interviewing", className: "bg-secondary/20 text-secondary border-secondary/30", icon: <Briefcase className="w-3 h-3" /> },
-  offer: { label: "Offer", className: "bg-primary text-primary-foreground border-primary", icon: <CheckCircle className="w-3 h-3" /> },
-  rejected: { label: "Rejected", className: "bg-destructive/20 text-destructive/80 border-destructive/30", icon: <XCircle className="w-3 h-3" /> },
-}
-
-const allStatuses: Status[] = ["saved", "applied", "interviewing", "offer", "rejected"]
-const locations = ["All", "Remote", "San Francisco", "New York", "Austin", "Los Gatos"]
-const PAGE_SIZES = [5, 10, 20, 50]
-
 export function ApplicationTracker() {
-  const [applications, setApplications] = useState(initialApplications)
+  const { data: applications = [], isLoading } = useTrackedJobs()
+  const updateTracker = useUpdateTracker()
+  const removeTracker = useRemoveFromTracker()
+
   const [searchQuery, setSearchQuery] = useState("")
-  const [statusFilter, setStatusFilter] = useState<Status | "all">("all")
+  const [statusFilter, setStatusFilter] = useState<string | "all">("all")
   const [locationFilter, setLocationFilter] = useState("All")
   const [sortField, setSortField] = useState<SortField>("date")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
   const [selectedRows, setSelectedRows] = useState<number[]>([])
-  const [selectedJob, setSelectedJob] = useState<Application | null>(null)
+  const [selectedJob, setSelectedJob] = useState<TrackedJob | null>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [visibleColumns, setVisibleColumns] = useState({
@@ -126,15 +123,23 @@ export function ApplicationTracker() {
     nextAction: true
   })
 
-  const updateStatus = (id: number, newStatus: Status) => {
-    setApplications(apps => 
-      apps.map(app => app.id === id ? { ...app, status: newStatus } : app)
-    )
+  const updateStatus = async (id: number, newStatus: string) => {
+    try {
+      await updateTracker.mutateAsync({ id, status: newStatus })
+      toast.success(`Status updated to ${statusConfig[newStatus]?.label || newStatus}`)
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update status")
+    }
   }
 
-  const deleteSelected = () => {
-    setApplications(apps => apps.filter(app => !selectedRows.includes(app.id)))
-    setSelectedRows([])
+  const deleteSelected = async () => {
+    try {
+      await Promise.all(selectedRows.map(id => removeTracker.mutateAsync(id)))
+      setSelectedRows([])
+      toast.success("Applications deleted")
+    } catch (err: any) {
+      toast.error("Failed to delete some applications")
+    }
   }
 
   const handleSort = (field: SortField) => {
@@ -149,10 +154,10 @@ export function ApplicationTracker() {
   const filteredAndSorted = useMemo(() => {
     let result = applications.filter(app => {
       const matchesSearch = 
-        app.jobTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        app.company.toLowerCase().includes(searchQuery.toLowerCase())
+        app.job.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        app.job.company.toLowerCase().includes(searchQuery.toLowerCase())
       const matchesStatus = statusFilter === "all" || app.status === statusFilter
-      const matchesLocation = locationFilter === "All" || app.location === locationFilter
+      const matchesLocation = locationFilter === "All" || app.job.remote === locationFilter
       return matchesSearch && matchesStatus && matchesLocation
     })
 
@@ -160,21 +165,19 @@ export function ApplicationTracker() {
       let comparison = 0
       switch (sortField) {
         case "match":
-          comparison = a.matchScore - b.matchScore
+          comparison = (a.match_score || 0) - (b.match_score || 0)
           break
         case "company":
-          comparison = a.company.localeCompare(b.company)
+          comparison = a.job.company.localeCompare(b.job.company)
           break
         case "status":
           comparison = allStatuses.indexOf(a.status) - allStatuses.indexOf(b.status)
           break
         case "salary":
-          const aNum = parseInt(a.salary.replace(/\D/g, ''))
-          const bNum = parseInt(b.salary.replace(/\D/g, ''))
-          comparison = aNum - bNum
+          comparison = (a.job.salary_min || 0) - (b.job.salary_min || 0)
           break
         default:
-          comparison = new Date(a.dateApplied).getTime() - new Date(b.dateApplied).getTime()
+          comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       }
       return sortDir === "asc" ? comparison : -comparison
     })
@@ -201,16 +204,16 @@ export function ApplicationTracker() {
 
   const statusCounts = {
     all: applications.length,
-    saved: applications.filter(a => a.status === "saved").length,
-    applied: applications.filter(a => a.status === "applied").length,
-    interviewing: applications.filter(a => a.status === "interviewing").length,
-    offer: applications.filter(a => a.status === "offer").length,
-    rejected: applications.filter(a => a.status === "rejected").length,
+    ...allStatuses.reduce((acc, s) => ({ ...acc, [s]: applications.filter(a => a.status === s).length }), {} as Record<string, number>)
   }
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) return <ArrowUpDown className="w-4 h-4 ml-1 text-muted-foreground/50" />
     return sortDir === "asc" ? <ArrowUp className="w-4 h-4 ml-1 text-primary" /> : <ArrowDown className="w-4 h-4 ml-1 text-primary" />
+  }
+
+  if (isLoading) {
+    return <div className="p-12 text-center text-muted-foreground animate-pulse">Loading tracked applications...</div>
   }
 
   return (
@@ -282,18 +285,22 @@ export function ApplicationTracker() {
           >
             All ({statusCounts.all})
           </Button>
-          {allStatuses.map(status => (
-            <Button
-              key={status}
-              variant={statusFilter === status ? "default" : "outline"}
-              size="sm"
-              onClick={() => { setStatusFilter(status); setPage(1) }}
-              className={statusFilter === status ? statusConfig[status].className : "border-border/50"}
-            >
-              {statusConfig[status].icon}
-              <span className="ml-1">{statusConfig[status].label} ({statusCounts[status]})</span>
-            </Button>
-          ))}
+          {allStatuses.map(status => {
+            const count = statusCounts[status] || 0
+            if (count === 0 && statusFilter !== status) return null
+            return (
+              <Button
+                key={status}
+                variant={statusFilter === status ? "default" : "outline"}
+                size="sm"
+                onClick={() => { setStatusFilter(status); setPage(1) }}
+                className={statusFilter === status ? statusConfig[status]?.className : "border-border/50"}
+              >
+                {statusConfig[status]?.icon}
+                <span className="ml-1">{statusConfig[status]?.label} ({count})</span>
+              </Button>
+            )
+          })}
           
           {/* Bulk Actions */}
           {selectedRows.length > 0 && (
@@ -388,14 +395,14 @@ export function ApplicationTracker() {
                     className="border-muted-foreground data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                   />
                 </TableCell>
-                <TableCell className="font-medium">{app.jobTitle}</TableCell>
+                <TableCell className="font-medium">{app.job.title}</TableCell>
                 {visibleColumns.company && (
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-lg bg-secondary/20 flex items-center justify-center">
                         <Building2 className="w-4 h-4 text-secondary" />
                       </div>
-                      {app.company}
+                      {app.job.company}
                     </div>
                   </TableCell>
                 )}
@@ -403,15 +410,15 @@ export function ApplicationTracker() {
                   <TableCell className="text-muted-foreground">
                     <div className="flex items-center gap-1">
                       <MapPin className="w-3 h-3" />
-                      {app.location}
+                      {app.job.location || app.job.remote || "Remote"}
                     </div>
                   </TableCell>
                 )}
                 {visibleColumns.salary && (
                   <TableCell className="text-muted-foreground">
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 text-xs">
                       <DollarSign className="w-3 h-3" />
-                      {app.salary}
+                      {app.job.salary_min ? `${app.job.salary_currency}${app.job.salary_min / 1000}k - ${app.job.salary_max ? app.job.salary_max / 1000 : '?'}k` : "Not specified"}
                     </div>
                   </TableCell>
                 )}
@@ -419,7 +426,7 @@ export function ApplicationTracker() {
                   <TableCell className="text-muted-foreground">
                     <div className="flex items-center gap-1">
                       <Calendar className="w-3 h-3" />
-                      {app.dateApplied}
+                      {app.applied_date ? format(new Date(app.applied_date), "MMM d, yyyy") : format(new Date(app.created_at), "MMM d, yyyy")}
                     </div>
                   </TableCell>
                 )}
@@ -428,12 +435,12 @@ export function ApplicationTracker() {
                     <span 
                       className="font-mono font-bold"
                       style={{ 
-                        color: app.matchScore >= 90 ? '#DFFF00' : 
-                               app.matchScore >= 80 ? '#00D4FF' : 
-                               app.matchScore >= 70 ? '#A020F0' : '#888'
+                        color: (app.match_score || 0) >= 90 ? '#DFFF00' : 
+                               (app.match_score || 0) >= 80 ? '#00D4FF' : 
+                               (app.match_score || 0) >= 70 ? '#A020F0' : '#888'
                       }}
                     >
-                      {app.matchScore}%
+                      {app.match_score ? `${app.match_score}%` : '-%'}
                     </span>
                   </TableCell>
                 )}
@@ -442,9 +449,9 @@ export function ApplicationTracker() {
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" className="h-auto p-0 hover:bg-transparent">
-                          <Badge className={`${statusConfig[app.status].className} cursor-pointer`}>
-                            {statusConfig[app.status].icon}
-                            <span className="ml-1">{statusConfig[app.status].label}</span>
+                          <Badge className={`${statusConfig[app.status]?.className || 'bg-muted'} cursor-pointer`}>
+                            {statusConfig[app.status]?.icon || <Clock className="w-3 h-3" />}
+                            <span className="ml-1">{statusConfig[app.status]?.label || app.status}</span>
                             <ChevronDown className="w-3 h-3 ml-1" />
                           </Badge>
                         </Button>
@@ -457,8 +464,8 @@ export function ApplicationTracker() {
                             className={app.status === status ? "bg-muted" : ""}
                           >
                             <span className={`flex items-center gap-2 ${app.status === status ? "font-medium" : ""}`}>
-                              {statusConfig[status].icon}
-                              {statusConfig[status].label}
+                              {statusConfig[status]?.icon}
+                              {statusConfig[status]?.label}
                             </span>
                           </DropdownMenuItem>
                         ))}
@@ -468,7 +475,7 @@ export function ApplicationTracker() {
                 )}
                 {visibleColumns.nextAction && (
                   <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
-                    {app.nextAction}
+                    {app.next_action || "None"}
                   </TableCell>
                 )}
                 <TableCell onClick={(e) => e.stopPropagation()}>
@@ -488,7 +495,7 @@ export function ApplicationTracker() {
                         Edit Application
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem className="text-destructive">
+                      <DropdownMenuItem className="text-destructive" onClick={() => removeTracker.mutate(app.id)}>
                         <Trash2 className="w-4 h-4 mr-2" />
                         Delete
                       </DropdownMenuItem>
@@ -577,19 +584,19 @@ export function ApplicationTracker() {
               <DialogHeader>
                 <div className="flex items-start justify-between">
                   <div>
-                    <DialogTitle className="text-2xl">{selectedJob.jobTitle}</DialogTitle>
+                    <DialogTitle className="text-2xl">{selectedJob.job.title}</DialogTitle>
                     <div className="flex items-center gap-4 mt-2 text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <Building2 className="w-4 h-4" />
-                        {selectedJob.company}
+                        {selectedJob.job.company}
                       </span>
                       <span className="flex items-center gap-1">
                         <MapPin className="w-4 h-4" />
-                        {selectedJob.location}
+                        {selectedJob.job.location || selectedJob.job.remote || "Remote"}
                       </span>
                       <span className="flex items-center gap-1">
                         <DollarSign className="w-4 h-4" />
-                        {selectedJob.salary}
+                        {selectedJob.job.salary_min ? `${selectedJob.job.salary_currency}${selectedJob.job.salary_min / 1000}k - ${selectedJob.job.salary_max ? selectedJob.job.salary_max / 1000 : '?'}k` : "Not specified"}
                       </span>
                     </div>
                   </div>
@@ -597,12 +604,12 @@ export function ApplicationTracker() {
                     <div 
                       className="text-3xl font-bold font-mono"
                       style={{ 
-                        color: selectedJob.matchScore >= 90 ? '#DFFF00' : 
-                               selectedJob.matchScore >= 80 ? '#00D4FF' : 
-                               selectedJob.matchScore >= 70 ? '#A020F0' : '#888'
+                        color: (selectedJob.match_score || 0) >= 90 ? '#DFFF00' : 
+                               (selectedJob.match_score || 0) >= 80 ? '#00D4FF' : 
+                               (selectedJob.match_score || 0) >= 70 ? '#A020F0' : '#888'
                       }}
                     >
-                      {selectedJob.matchScore}%
+                      {selectedJob.match_score ? `${selectedJob.match_score}%` : '-%'}
                     </div>
                     <p className="text-xs text-muted-foreground">Match Score</p>
                   </div>
@@ -611,53 +618,59 @@ export function ApplicationTracker() {
 
               <div className="space-y-6 mt-4">
                 <div className="flex items-center gap-4">
-                  <Badge className={statusConfig[selectedJob.status].className}>
-                    {statusConfig[selectedJob.status].icon}
-                    <span className="ml-1">{statusConfig[selectedJob.status].label}</span>
+                  <Badge className={statusConfig[selectedJob.status]?.className || 'bg-muted'}>
+                    {statusConfig[selectedJob.status]?.icon || <Clock className="w-3 h-3" />}
+                    <span className="ml-1">{statusConfig[selectedJob.status]?.label || selectedJob.status}</span>
                   </Badge>
                   <span className="text-sm text-muted-foreground">
-                    Applied on {selectedJob.dateApplied}
+                    Applied on {selectedJob.applied_date ? format(new Date(selectedJob.applied_date), "MMM d, yyyy") : format(new Date(selectedJob.created_at), "MMM d, yyyy")}
                   </span>
                 </div>
 
                 <div className="p-4 bg-muted/30 rounded-xl">
                   <h4 className="font-medium text-sm text-muted-foreground mb-1">Next Action</h4>
-                  <p>{selectedJob.nextAction}</p>
+                  <p>{selectedJob.next_action || "No upcoming actions"}</p>
                 </div>
 
                 <div>
                   <h3 className="font-semibold text-lg mb-3">About the Role</h3>
-                  <p className="text-muted-foreground leading-relaxed">{selectedJob.description}</p>
+                  <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">{selectedJob.job.description}</p>
                 </div>
 
-                <div>
-                  <h3 className="font-semibold text-lg mb-3">Requirements</h3>
-                  <ul className="space-y-2">
-                    {selectedJob.requirements.map((req, i) => (
-                      <li key={i} className="flex items-start gap-3 text-muted-foreground">
-                        <CheckCircle className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
-                        {req}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                {selectedJob.job.requirements && selectedJob.job.requirements.length > 0 && (
+                  <div>
+                    <h3 className="font-semibold text-lg mb-3">Requirements</h3>
+                    <ul className="space-y-2">
+                      {selectedJob.job.requirements.map((req, i) => (
+                        <li key={i} className="flex items-start gap-3 text-muted-foreground">
+                          <CheckCircle className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
+                          {req}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
-                <div>
-                  <h3 className="font-semibold text-lg mb-3">Responsibilities</h3>
-                  <ul className="space-y-2">
-                    {selectedJob.responsibilities.map((resp, i) => (
-                      <li key={i} className="flex items-start gap-3 text-muted-foreground">
-                        <span className="text-secondary font-bold">•</span>
-                        {resp}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                {selectedJob.job.responsibilities && selectedJob.job.responsibilities.length > 0 && (
+                  <div>
+                    <h3 className="font-semibold text-lg mb-3">Responsibilities</h3>
+                    <ul className="space-y-2">
+                      {selectedJob.job.responsibilities.map((resp, i) => (
+                        <li key={i} className="flex items-start gap-3 text-muted-foreground">
+                          <span className="text-secondary font-bold">•</span>
+                          {resp}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 <div className="flex gap-3 pt-4 border-t border-border">
-                  <Button className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90">
-                    <ExternalLink className="w-4 h-4 mr-2" />
-                    View Original Posting
+                  <Button className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90" asChild>
+                    <a href={selectedJob.job.url} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      View Original Posting
+                    </a>
                   </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -675,8 +688,8 @@ export function ApplicationTracker() {
                             setSelectedJob({...selectedJob, status})
                           }}
                         >
-                          {statusConfig[status].icon}
-                          <span className="ml-2">{statusConfig[status].label}</span>
+                          {statusConfig[status]?.icon}
+                          <span className="ml-2">{statusConfig[status]?.label}</span>
                         </DropdownMenuItem>
                       ))}
                     </DropdownMenuContent>

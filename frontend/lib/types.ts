@@ -16,7 +16,6 @@ export interface User {
   phone: string | null;
   country: string | null;
   city: string | null;
-  county: string | null;
   postal_code: string | null;
   address_line: string | null;
   educations: Education[] | null;
@@ -26,6 +25,11 @@ export interface User {
   gender: string | null;
   setup_completed: boolean;
   has_cv: boolean;
+  desired_roles: string[] | null;
+  preferred_job_types: string[] | null;
+  preferred_location: string | null;
+  open_to_remote: boolean;
+  needs_visa: boolean;
 }
 
 export interface Education {
@@ -57,7 +61,6 @@ export interface UserUpdate {
   phone?: string;
   country?: string;
   city?: string;
-  county?: string;
   postal_code?: string;
   address_line?: string;
   educations?: Education[];
@@ -66,6 +69,11 @@ export interface UserUpdate {
   has_disability?: string;
   gender?: string;
   setup_completed?: boolean;
+  desired_roles?: string[];
+  preferred_job_types?: string[];
+  preferred_location?: string;
+  open_to_remote?: boolean;
+  needs_visa?: boolean;
 }
 
 export interface RegisterPayload {
@@ -109,6 +117,8 @@ export interface Job {
   responsibilities: string[] | null;
   scraped_at: string;
   posted_at: string | null;
+  formatted_description: string | null;
+  match_score?: number | null;
 }
 
 export interface JobSearchPayload {

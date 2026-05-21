@@ -42,6 +42,8 @@ class JobOut(BaseModel):
     posted_at: Optional[datetime]
     formatted_description: Optional[str] = None
     match_score: Optional[float] = None
+    posting_legitimacy: Optional[str] = None
+    legitimacy_signals: Optional[Any] = None
 
     class Config:
         from_attributes = True
@@ -124,6 +126,11 @@ class AnalysisOut(BaseModel):
     interview_questions: Optional[Any]
     ats_issues: Optional[Any]
     fixed_cv_text: Optional[str]
+    cv_customization_plan: Optional[Any] = None
+    # Denormalized job fields (populated via @property on model)
+    job_title: Optional[str] = None
+    company: Optional[str] = None
+    job_url: Optional[str] = None
     created_at: datetime
 
     class Config:

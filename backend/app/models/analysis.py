@@ -24,9 +24,22 @@ class JobAnalysis(Base):
     interview_questions = Column(JSON, nullable=True)
     ats_issues = Column(JSON, nullable=True)         # formatting / keyword gaps
     fixed_cv_text = Column(Text, nullable=True)      # AI-rewritten CV text
+    cv_customization_plan = Column(JSON, nullable=True)  # structured diff: [{section, priority, type, original, suggested, reason}]
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     owner = relationship("User", back_populates="analyses")
     job = relationship("Job", back_populates="analyses")
     cv = relationship("CV", back_populates="analyses")
+
+    @property
+    def job_title(self) -> str | None:
+        return self.job.title if self.job else None
+
+    @property
+    def company(self) -> str | None:
+        return self.job.company if self.job else None
+
+    @property
+    def job_url(self) -> str | None:
+        return self.job.url if self.job else None

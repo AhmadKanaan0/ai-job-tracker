@@ -62,6 +62,17 @@ export function useScrapeJob() {
   });
 }
 
+export function useImportJobs() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (file: File) => api.upload<Job[]>("/jobs/import", file),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: jobKeys.all });
+    },
+  });
+}
+
 export function useOptimizeJob() {
   const qc = useQueryClient();
 

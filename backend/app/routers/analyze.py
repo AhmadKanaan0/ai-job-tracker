@@ -270,6 +270,50 @@ def quick_score(
     return ai_service.quick_score(cv.parsed_text, job.description)
 
 
+@router.post("/cv-diff", response_model=AnalysisOut)
+def cv_diff(
+    payload: FixCVRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Generate a prioritised list of specific CV changes for a job — no full rewrite.
+    Returns structured before/after diffs per CV section with priority and reason.
+    """
+    job, cv = _get_job_and_cv(payload.job_id, payload.cv_id, current_user.id, db)
+
+    try:
+        result = ai_service.generate_cv_diff(
+            cv_text=cv.parsed_text,
+            job_description=job.description,
+            job_title=job.title,
+        )
+    except Exception as e:
+        if e.__class__.__name__ == "HTTPException":
+            raise e
+        raise HTTPException(status_code=502, detail=f"AI service error: {e}")
+
+    existing = db.query(JobAnalysis).filter(
+        JobAnalysis.user_id == current_user.id,
+        JobAnalysis.job_id == payload.job_id,
+        JobAnalysis.cv_id == payload.cv_id,
+    ).first()
+
+    analysis = existing or JobAnalysis(
+        user_id=current_user.id,
+        job_id=payload.job_id,
+        cv_id=payload.cv_id,
+    )
+
+    analysis.cv_customization_plan = result
+
+    if not existing:
+        db.add(analysis)
+    db.commit()
+    db.refresh(analysis)
+    return analysis
+
+
 @router.post("/fix-cv", response_model=AnalysisOut)
 def fix_cv(
     payload: FixCVRequest,
@@ -322,12 +366,36 @@ def analysis_history(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    from sqlalchemy.orm import joinedload
     return (
         db.query(JobAnalysis)
+        .options(joinedload(JobAnalysis.job))
         .filter(JobAnalysis.user_id == current_user.id)
         .order_by(JobAnalysis.created_at.desc())
         .all()
     )
+
+
+@router.get("/detail/{analysis_id}", response_model=AnalysisOut)
+def get_analysis_by_id(
+    analysis_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Fetch a single analysis by its primary key."""
+    from sqlalchemy.orm import joinedload
+    analysis = (
+        db.query(JobAnalysis)
+        .options(joinedload(JobAnalysis.job))
+        .filter(
+            JobAnalysis.id == analysis_id,
+            JobAnalysis.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not analysis:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    return analysis
 
 
 @router.get("/{job_id}/{cv_id}", response_model=Optional[AnalysisOut])
@@ -338,8 +406,10 @@ def get_analysis(
     current_user: User = Depends(get_current_user),
 ):
     """Fetch the most recent analysis for a specific job + CV."""
+    from sqlalchemy.orm import joinedload
     return (
         db.query(JobAnalysis)
+        .options(joinedload(JobAnalysis.job))
         .filter(
             JobAnalysis.user_id == current_user.id,
             JobAnalysis.job_id == job_id,

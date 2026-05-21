@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import Optional, List
+import json, csv, io
 
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -149,6 +150,141 @@ async def search_jobs(
     return saved
 
 
+@router.post("/import", response_model=List[JobOut], status_code=201)
+async def import_jobs(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Import jobs from a JSON array or CSV file.
+    Flexible field mapping handles common column name variations.
+    Deduplicates by URL — skips rows that already exist.
+    """
+    content = await file.read()
+    filename = (file.filename or "").lower()
+
+    # ── Field name aliases ────────────────────────────────────────────────
+    ALIASES = {
+        "title":           ["title", "job_title", "position", "role", "name"],
+        "company":         ["company", "company_name", "employer", "organisation", "organization"],
+        "url":             ["url", "link", "apply_url", "job_url", "application_link", "source_url", "applyurl"],
+        "location":        ["location", "city", "country", "job_location"],
+        "remote":          ["remote", "work_type", "workplace", "remote_type"],
+        "description":     ["description", "job_description", "details", "body", "content"],
+        "salary_min":      ["salary_min", "min_salary", "salary_from", "salarymin"],
+        "salary_max":      ["salary_max", "max_salary", "salary_to", "salarymax"],
+        "salary_currency": ["salary_currency", "currency", "salarycurrency"],
+        "source":          ["source", "portal", "board", "site"],
+        "job_type":        ["job_type", "employment_type", "type", "contract_type"],
+        "experience_level":["experience_level", "level", "seniority", "experience"],
+        "posted_at":       ["posted_at", "posted_date", "date_posted", "pub_date", "created_at", "publishedat"],
+        "tags":            ["tags", "skills", "keywords", "categories"],
+    }
+
+    def resolve(row: dict, field: str):
+        """Pick the first alias that exists in the row."""
+        for alias in ALIASES[field]:
+            if alias in row:
+                return row[alias]
+            # also try case-insensitive
+            for k in row:
+                if k.lower() == alias:
+                    return row[k]
+        return None
+
+    def parse_rows(raw_rows: list[dict]) -> list[dict]:
+        out = []
+        for row in raw_rows:
+            url = resolve(row, "url")
+            title = resolve(row, "title")
+            company = resolve(row, "company")
+            if not url or not title or not company:
+                continue  # skip incomplete rows
+            tags_raw = resolve(row, "tags")
+            if isinstance(tags_raw, str):
+                tags = [t.strip() for t in tags_raw.replace(";", ",").split(",") if t.strip()]
+            elif isinstance(tags_raw, list):
+                tags = tags_raw
+            else:
+                tags = []
+            out.append({
+                "title": str(title),
+                "company": str(company),
+                "url": str(url),
+                "location": resolve(row, "location"),
+                "remote": resolve(row, "remote"),
+                "description": resolve(row, "description"),
+                "salary_min": _to_int(resolve(row, "salary_min")),
+                "salary_max": _to_int(resolve(row, "salary_max")),
+                "salary_currency": resolve(row, "salary_currency"),
+                "source": resolve(row, "source") or "import",
+                "job_type": resolve(row, "job_type"),
+                "experience_level": resolve(row, "experience_level"),
+                "posted_at": resolve(row, "posted_at"),
+                "tags": tags,
+            })
+        return out
+
+    # ── Parse file ────────────────────────────────────────────────────────
+    try:
+        if filename.endswith(".json"):
+            data = json.loads(content.decode("utf-8"))
+            raw_rows = data if isinstance(data, list) else data.get("jobs", data.get("data", []))
+        elif filename.endswith(".csv"):
+            text = content.decode("utf-8-sig")  # handle BOM
+            reader = csv.DictReader(io.StringIO(text))
+            raw_rows = list(reader)
+        else:
+            raise HTTPException(status_code=415, detail="Only .json and .csv files are supported")
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise HTTPException(status_code=422, detail=f"Could not parse file: {e}")
+
+    rows = parse_rows(raw_rows)
+    if not rows:
+        raise HTTPException(status_code=422, detail="No valid job rows found. Rows need at least title, company, and url.")
+
+    # ── Upsert ───────────────────────────────────────────────────────────
+    from app.services.scraper import _parse_date
+    saved = []
+    skipped = 0
+    for r in rows:
+        if db.query(Job).filter(Job.url == r["url"]).first():
+            skipped += 1
+            continue
+        job = Job(
+            title=r["title"],
+            company=r["company"],
+            url=r["url"],
+            location=r.get("location"),
+            remote=r.get("remote"),
+            description=r.get("description"),
+            salary_min=r.get("salary_min"),
+            salary_max=r.get("salary_max"),
+            salary_currency=r.get("salary_currency"),
+            source=r.get("source", "import"),
+            job_type=r.get("job_type"),
+            experience_level=r.get("experience_level"),
+            posted_at=_parse_date(r.get("posted_at")),
+            tags=r.get("tags", []),
+        )
+        db.add(job)
+        saved.append(job)
+
+    db.commit()
+    for job in saved:
+        db.refresh(job)
+
+    return saved
+
+
+def _to_int(val) -> Optional[int]:
+    try:
+        return int(float(str(val).replace(",", "").replace("$", "").replace("€", "").strip()))
+    except Exception:
+        return None
+
+
 @router.post("/scrape", response_model=JobOut, status_code=201)
 async def scrape_single(
     payload: ScrapeRequest,
@@ -294,6 +430,41 @@ def get_job(
         if analysis:
             job.match_score = analysis.match_score
 
+    return job
+
+
+@router.post("/{job_id}/check-legitimacy", response_model=JobOut)
+async def check_legitimacy(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Run an AI legitimacy check on a job posting.
+    Flags ghost listings, missing salary, old posts, and other red flags.
+    Result is cached on the Job record.
+    """
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not job.description:
+        raise HTTPException(status_code=400, detail="Job has no description to check")
+
+    try:
+        result = ai_service.check_posting_legitimacy(
+            job_title=job.title,
+            company=job.company,
+            description=job.description,
+            posted_at=str(job.posted_at) if job.posted_at else "",
+            url=job.url,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"AI service error: {e}")
+
+    job.posting_legitimacy = result.get("verdict")
+    job.legitimacy_signals = result
+    db.commit()
+    db.refresh(job)
     return job
 
 

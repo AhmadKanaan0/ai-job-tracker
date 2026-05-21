@@ -94,6 +94,19 @@ export interface Token {
 
 // ── Jobs ──────────────────────────────────────────────────────────────────
 
+export type PostingLegitimacy = "high_confidence" | "proceed_with_caution" | "suspicious";
+
+export interface LegitimacySignal {
+  signal: string;
+  severity: "low" | "medium" | "high";
+}
+
+export interface LegitimacyResult {
+  verdict: PostingLegitimacy;
+  signals: LegitimacySignal[];
+  summary: string;
+}
+
 export interface Job {
   id: number;
   title: string;
@@ -118,6 +131,8 @@ export interface Job {
   posted_at: string | null;
   formatted_description: string | null;
   match_score?: number | null;
+  posting_legitimacy?: PostingLegitimacy | null;
+  legitimacy_signals?: LegitimacyResult | null;
 }
 
 export interface JobSearchPayload {
@@ -181,6 +196,21 @@ export interface CV {
 
 // ── Analysis ──────────────────────────────────────────────────────────────
 
+export interface CvChange {
+  section: string;
+  priority: "high" | "medium" | "low";
+  type: "rewrite" | "add" | "remove" | "keyword";
+  original: string;
+  suggested: string;
+  reason: string;
+}
+
+export interface CvDiff {
+  changes: CvChange[];
+  quick_wins: string[];
+  ats_improvement: string;
+}
+
 export interface Analysis {
   id: number;
   job_id: number;
@@ -195,6 +225,11 @@ export interface Analysis {
   interview_questions: unknown;
   ats_issues: unknown;
   fixed_cv_text: string | null;
+  cv_customization_plan: CvDiff | null;
+  // Denormalized job fields
+  job_title: string | null;
+  company: string | null;
+  job_url: string | null;
   created_at: string;
 }
 

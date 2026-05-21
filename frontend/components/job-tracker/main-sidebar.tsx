@@ -1,6 +1,6 @@
 "use client"
 
-import { Zap, LayoutDashboard, Compass, Brain, FileText, ListChecks, User, LogOut, Settings } from "lucide-react"
+import { Zap, LayoutDashboard, Compass, Brain, FileText, ListChecks, User, LogOut, Settings, Kanban, BarChart2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
@@ -18,11 +18,13 @@ interface MainSidebarProps {
 }
 
 const navItems = [
-  { path: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-  { path: "/dashboard/discovery", icon: Compass, label: "Discovery" },
-  { path: "/dashboard/analyzer", icon: Brain, label: "Analyzer" },
-  { path: "/dashboard/cv-manager", icon: FileText, label: "CV Manager" },
-  { path: "/dashboard/tracker", icon: ListChecks, label: "Tracker" },
+  { path: "/dashboard",            icon: LayoutDashboard, label: "Dashboard" },
+  { path: "/dashboard/discovery",  icon: Compass,         label: "Discovery" },
+  { path: "/dashboard/analyzer",   icon: Brain,           label: "Analyzer" },
+  { path: "/dashboard/pipeline",   icon: Kanban,          label: "Pipeline" },
+  { path: "/dashboard/tracker",    icon: ListChecks,      label: "Tracker" },
+  { path: "/dashboard/reports",    icon: BarChart2,       label: "Reports" },
+  { path: "/dashboard/cv-manager", icon: FileText,        label: "CV Manager" },
 ]
 
 export function MainSidebar({ onLogout }: MainSidebarProps) {
@@ -93,9 +95,11 @@ export function MainSidebar({ onLogout }: MainSidebarProps) {
                 View Profile
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem className="cursor-pointer">
-              <Settings className="w-4 h-4 mr-2" />
-              Settings
+            <DropdownMenuItem asChild className="cursor-pointer">
+              <Link href="/dashboard/profile">
+                <Settings className="w-4 h-4 mr-2" />
+                Settings
+              </Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator className="bg-border" />
             <DropdownMenuItem 

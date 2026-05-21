@@ -34,10 +34,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { 
-  MoreHorizontal, 
-  ExternalLink, 
-  Search, 
+import {
+  MoreHorizontal,
+  ExternalLink,
+  Search,
   ChevronDown,
   Building2,
   MapPin,
@@ -58,13 +58,18 @@ import {
   ChevronsLeft,
   ChevronsRight,
   X,
-  SlidersHorizontal
+  SlidersHorizontal,
+  FileText,
+  BarChart2,
 } from "lucide-react"
 
 import { useTrackedJobs, useUpdateTracker, useRemoveFromTracker } from "@/hooks/use-tracker"
-import type { TrackedJob } from "@/lib/types"
+import { useAnalysisHistory } from "@/hooks/use-analysis"
+import { useActiveCV } from "@/hooks/use-cv"
+import type { TrackedJob, Analysis } from "@/lib/types"
 import { format } from "date-fns"
 import { toast } from "sonner"
+import { useRouter } from "next/navigation"
 
 const statusConfig: Record<string, { label: string; className: string; icon: React.ReactNode }> = {
   saved: { label: "Saved", className: "bg-muted text-muted-foreground border-muted", icon: <Clock className="w-3 h-3" /> },
@@ -100,9 +105,23 @@ type SortField = "date" | "match" | "company" | "status" | "salary"
 type SortDir = "asc" | "desc"
 
 export function ApplicationTracker() {
+  const router = useRouter()
   const { data: applications = [], isLoading } = useTrackedJobs()
+  const { data: analyses = [] } = useAnalysisHistory()
+  const { data: activeCV } = useActiveCV()
   const updateTracker = useUpdateTracker()
   const removeTracker = useRemoveFromTracker()
+
+  // Build job_id → most recent analysis map
+  const analysisMap = useMemo(() => {
+    const m: Record<number, Analysis> = {}
+    for (const a of analyses) {
+      if (!m[a.job_id] || new Date(a.created_at) > new Date(m[a.job_id].created_at)) {
+        m[a.job_id] = a
+      }
+    }
+    return m
+  }, [analyses])
 
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<string | "all">("all")
@@ -482,28 +501,72 @@ export function ApplicationTracker() {
                   </TableCell>
                 )}
                 <TableCell onClick={(e) => e.stopPropagation()}>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <MoreHorizontal className="w-4 h-4" />
+                  <div className="flex items-center gap-0.5">
+                    {/* CV icon */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                      title="View CV"
+                      onClick={() => {
+                        if (activeCV?.file_url) {
+                          window.open(
+                            `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/${activeCV.file_url}`,
+                            "_blank"
+                          )
+                        } else {
+                          toast.error("No active CV. Upload one in CV Manager.")
+                        }
+                      }}
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                    </Button>
+                    {/* Report icon */}
+                    {analysisMap[app.job.id] ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-primary"
+                        title="View Report"
+                        onClick={() => router.push(`/dashboard/reports/${app.job.id}/${analysisMap[app.job.id].cv_id}`)}
+                      >
+                        <BarChart2 className="w-3.5 h-3.5" />
                       </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => setSelectedJob(app)}>
-                        <ExternalLink className="w-4 h-4 mr-2" />
-                        View Details
-                      </DropdownMenuItem>
-                      <DropdownMenuItem>
-                        <Edit className="w-4 h-4 mr-2" />
-                        Edit Application
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem className="text-destructive" onClick={() => removeTracker.mutate(app.id)}>
-                        <Trash2 className="w-4 h-4 mr-2" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground/30 cursor-not-allowed"
+                        title="No report yet"
+                        disabled
+                      >
+                        <BarChart2 className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
+                    {/* More actions */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-7 w-7">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => setSelectedJob(app)}>
+                          <ExternalLink className="w-4 h-4 mr-2" />
+                          View Details
+                        </DropdownMenuItem>
+                        <DropdownMenuItem>
+                          <Edit className="w-4 h-4 mr-2" />
+                          Edit Application
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="text-destructive" onClick={() => removeTracker.mutate(app.id)}>
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

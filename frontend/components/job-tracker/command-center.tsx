@@ -4,6 +4,7 @@ import { KPICards } from "./kpi-cards"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { Building2, ArrowRight, Sparkles, Briefcase, TrendingUp } from "lucide-react"
+import { useRouter } from "next/navigation"
 import { useTrackerStats, useTrackedJobs } from "@/hooks/use-tracker"
 import { useAuth } from "@/lib/auth-context"
 import { useMemo } from "react"
@@ -24,6 +25,7 @@ export function CommandCenter() {
   const { data: stats } = useTrackerStats()
   const { data: trackedJobs = [] } = useTrackedJobs()
   const { user } = useAuth()
+  const router = useRouter()
 
   // Compute pipeline stages from real data
   const pipelineStages = useMemo(() => {
@@ -149,8 +151,9 @@ export function CommandCenter() {
           {recentActivity.length > 0 ? (
             <div className="space-y-3">
               {recentActivity.map((activity, i) => (
-                <div 
-                  key={i} 
+                <div
+                  key={i}
+                  onClick={() => router.push("/dashboard/tracker")}
                   className="flex items-center gap-3 p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
                 >
                   <div className="w-10 h-10 rounded-lg bg-secondary/20 flex items-center justify-center">

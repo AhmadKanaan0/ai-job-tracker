@@ -32,12 +32,12 @@ import {
 } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
-import { 
-  Search, 
-  MapPin, 
-  Clock, 
-  Building2, 
-  Heart, 
+import {
+  Search,
+  MapPin,
+  Clock,
+  Building2,
+  Heart,
   Ban,
   MoreHorizontal,
   Sparkles,
@@ -49,6 +49,11 @@ import {
   Share2,
   Flag,
   Check,
+  ShieldCheck,
+  ShieldAlert,
+  ShieldX,
+  Shield,
+  Upload,
 } from "lucide-react"
 
 const initialFilterOptions = {
@@ -57,6 +62,38 @@ const initialFilterOptions = {
   type: ["Full-time", "Part-time", "Contract", "Internship"],
   workplace: ["Remote", "Hybrid", "Onsite"]
 }
+
+const sourceOptions = [
+  // JSON API sources
+  { label: "We Work Remotely",      value: "weworkremotely" },
+  { label: "Remotive",              value: "remotive" },
+  { label: "RemoteOK",              value: "remoteok" },
+  { label: "Himalayas",             value: "himalayas" },
+  { label: "Working Nomads",        value: "workingnomads" },
+  { label: "HN Who's Hiring",       value: "hackernews" },
+  { label: "YC Work at a Startup",  value: "workatastartup" },
+  { label: "LinkedIn",              value: "linkedin" },
+  { label: "Indeed",                value: "indeed" },
+  // ATS boards
+  { label: "Greenhouse",            value: "greenhouse" },
+  { label: "Lever",                 value: "lever" },
+  { label: "Ashby",                 value: "ashby" },
+  { label: "Workable",              value: "workable" },
+  // HTML-scraped boards
+  { label: "ai-jobs.net",           value: "aijobsnet" },
+  { label: "EU Remote Jobs",        value: "euremotejobs" },
+  { label: "Nodesk",                value: "nodesk" },
+  { label: "Truly Remote",          value: "trulyremote" },
+  { label: "Forward Deploy",        value: "fwddeploy" },
+  { label: "Welcome to the Jungle", value: "welcometothejungle" },
+  { label: "TrueUp",                value: "trueup" },
+  { label: "Remote Rocketship",     value: "remoterocketship" },
+  { label: "DevRel Job",            value: "devreljob" },
+  // Spain
+  { label: "Getmanfred",            value: "getmanfred" },
+  { label: "Tecnoempleo",           value: "tecnoempleo" },
+  { label: "JobFluent",             value: "jobfluent" },
+]
 
 const dateOptions = [
   { label: "Past 24 hours", value: "24h" },
@@ -72,12 +109,14 @@ const experienceOptions = [
   { label: "8+ years", value: "8+" },
 ]
 
-import { useJobs, useSearchJobs } from "@/hooks/use-jobs"
+import { useJobs, useSearchJobs, useImportJobs } from "@/hooks/use-jobs"
 import { useTrackedJobs } from "@/hooks/use-tracker"
 import { useActiveCV } from "@/hooks/use-cv"
 import { useAuth } from "@/lib/auth-context"
+import { useCheckLegitimacy } from "@/hooks/use-analysis"
 import { useEffect, useMemo, useRef } from "react"
 import { toast } from "sonner"
+import type { PostingLegitimacy } from "@/lib/types"
 
 export function DiscoveryFeed() {
   const router = useRouter()
@@ -95,10 +134,15 @@ export function DiscoveryFeed() {
   const { data: activeCv } = useActiveCV()
   const { user } = useAuth()
   const searchMutation = useSearchJobs()
+  const checkLegitimacy = useCheckLegitimacy()
   const hasAutoSearched = useRef(false)
   const [isProfileSearch, setIsProfileSearch] = useState(false)
+  const [legitimacyMap, setLegitimacyMap] = useState<Record<number, PostingLegitimacy>>({})
+  const [checkingLegitimacy, setCheckingLegitimacy] = useState<Record<number, boolean>>({})
+  const [showHidden, setShowHidden] = useState(false)
 
   const isSearching = searchMutation.isPending
+  const importMutation = useImportJobs()
 
   // Fetch countries
   useEffect(() => {
@@ -239,61 +283,91 @@ export function DiscoveryFeed() {
   }
 
   const sortedJobs = useMemo(() => {
-    let result = (jobsList || []).filter(job => {
+    const all = jobsList || []
+
+    // Tab-level pre-filter
+    let result = all.filter(job => {
       const isHidden = hiddenJobs.includes(job.id)
       const isTracked = trackedJobs.some(tj => tj.job.id === job.id)
-      if (isHidden || isTracked) return false
+      const isSaved = savedJobs.includes(job.id)
+      const isATS = ["greenhouse", "lever", "ashby"].includes(job.source || "")
 
-      // Apply filters
-      for (const [key, selected] of Object.entries(activeFilters)) {
-        if (selected.length === 0) continue
+      if (activeTab === "liked")    return isSaved && !isHidden
+      if (activeTab === "applied")  return isTracked
+      if (activeTab === "external") return isATS && !isHidden && !isTracked
 
-        if (key === "location") {
-          if (!selected.some(loc => job.location?.toLowerCase().includes(loc.toLowerCase()))) return false
-        }
-        if (key === "role") {
-          if (!selected.some(role => job.title?.toLowerCase().includes(role.toLowerCase()))) return false
-        }
-        if (key === "level") {
-          if (!selected.some(level => job.experience_level?.toLowerCase().includes(level.toLowerCase()))) return false
-        }
-        if (key === "type") {
-          if (!selected.some(type => job.job_type?.toLowerCase().includes(type.toLowerCase()))) return false
-        }
-        if (key === "workplace") {
-          if (!selected.some(wp => job.remote?.toLowerCase() === wp.toLowerCase())) return false
-        }
-        if (key === "datePosted") {
-          if (selected[0] === "all") continue
-          const now = new Date()
-          const jobDate = new Date(job.posted_at || job.scraped_at)
-          const diff = (now.getTime() - jobDate.getTime()) / (1000 * 60 * 60) // hours
-          if (selected[0] === "24h" && diff > 24) return false
-          if (selected[0] === "7d" && diff > 24 * 7) return false
-          if (selected[0] === "30d" && diff > 24 * 30) return false
-        }
-        if (key === "experience") {
-          const text = ((job.experience_level || "") + " " + (job.description || "")).toLowerCase()
-          // Check for strings like "2+ years", "5 years", etc.
-          if (!selected.some(exp => {
-            const num = parseInt(exp.split("-")[0])
-            return text.includes(`${num} year`) || text.includes(`${num}+ year`) || text.includes(exp.toLowerCase())
-          })) return false
-        }
-      }
-
+      // "recommended" — hide tracked and hidden unless showHidden overrides hidden
+      if (isTracked) return false
+      if (isHidden && !showHidden) return false
       return true
     })
 
-    // Sort
-    if (sortBy === "match") {
-      result.sort((a, b) => (b.match_score || 0) - (a.match_score || 0))
-    } else if (sortBy === "recent") {
-      result.sort((a, b) => new Date(b.scraped_at || b.scraped_at).getTime() - new Date(a.scraped_at || a.scraped_at).getTime())
+    // Apply dropdown filters
+    for (const [key, selected] of Object.entries(activeFilters)) {
+      if (!selected || selected.length === 0) continue
+      result = result.filter(job => {
+        if (key === "location") return selected.some(loc => job.location?.toLowerCase().includes(loc.toLowerCase()))
+        if (key === "role")     return selected.some(role => job.title?.toLowerCase().includes(role.toLowerCase()))
+        if (key === "level")    return selected.some(level => job.experience_level?.toLowerCase().includes(level.toLowerCase()))
+        if (key === "type")     return selected.some(type => job.job_type?.toLowerCase().includes(type.toLowerCase()))
+        if (key === "workplace") return selected.some(wp => job.remote?.toLowerCase() === wp.toLowerCase())
+        if (key === "source")   return selected.includes(job.source || "")
+        if (key === "datePosted") {
+          if (selected[0] === "all") return true
+          const diff = (Date.now() - new Date(job.posted_at || job.scraped_at).getTime()) / 3_600_000
+          if (selected[0] === "24h" && diff > 24)    return false
+          if (selected[0] === "7d"  && diff > 168)   return false
+          if (selected[0] === "30d" && diff > 720)   return false
+          return true
+        }
+        if (key === "experience") {
+          const text = ((job.experience_level || "") + " " + (job.description || "")).toLowerCase()
+          return selected.some(exp => {
+            const num = parseInt(exp.split("-")[0])
+            return text.includes(`${num} year`) || text.includes(`${num}+ year`) || text.includes(exp.toLowerCase())
+          })
+        }
+        return true
+      })
     }
 
+    // Sort
+    if (sortBy === "match")  result.sort((a, b) => (b.match_score || 0) - (a.match_score || 0))
+    if (sortBy === "recent") result.sort((a, b) => new Date(b.scraped_at).getTime() - new Date(a.scraped_at).getTime())
+
     return result
-  }, [jobsList, hiddenJobs, trackedJobs, activeFilters, sortBy])
+  }, [jobsList, hiddenJobs, trackedJobs, savedJobs, activeFilters, sortBy, activeTab, showHidden])
+
+  const handleCheckLegitimacy = async (jobId: number, e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    setCheckingLegitimacy(prev => ({ ...prev, [jobId]: true }))
+    try {
+      const updated = await checkLegitimacy.mutateAsync(jobId)
+      if (updated.posting_legitimacy) {
+        setLegitimacyMap(prev => ({ ...prev, [jobId]: updated.posting_legitimacy! }))
+      }
+    } catch {
+      toast.error("Legitimacy check failed")
+    } finally {
+      setCheckingLegitimacy(prev => ({ ...prev, [jobId]: false }))
+    }
+  }
+
+  const LegitimacyBadge = ({ jobId, verdict }: { jobId: number; verdict: PostingLegitimacy | null | undefined }) => {
+    const effective = legitimacyMap[jobId] || verdict
+    if (!effective) return null
+    const map = {
+      high_confidence:       { icon: ShieldCheck, label: "Verified",  cls: "text-green-400 border-green-500/30 bg-green-500/10" },
+      proceed_with_caution:  { icon: ShieldAlert, label: "Caution",   cls: "text-yellow-400 border-yellow-500/30 bg-yellow-500/10" },
+      suspicious:            { icon: ShieldX,     label: "Suspicious", cls: "text-red-400 border-red-500/30 bg-red-500/10" },
+    }
+    const { icon: Icon, label, cls } = map[effective]
+    return (
+      <Badge variant="outline" className={cn("text-[10px] gap-1", cls)}>
+        <Icon className="w-3 h-3" /> {label}
+      </Badge>
+    )
+  }
 
   if (isLoading) return <div className="p-12 text-center text-muted-foreground animate-pulse">Scanning the market for opportunities...</div>
 
@@ -310,19 +384,19 @@ export function DiscoveryFeed() {
               Liked <Badge variant="secondary" className="ml-2 bg-muted">{savedJobs.length}</Badge>
             </TabsTrigger>
             <TabsTrigger value="applied" className="px-6 data-[state=active]:bg-background">
-              Applied <Badge variant="secondary" className="ml-2 bg-muted">0</Badge>
+              Applied <Badge variant="secondary" className="ml-2 bg-muted">{trackedJobs.length}</Badge>
             </TabsTrigger>
             <TabsTrigger value="external" className="px-6 data-[state=active]:bg-background">
-              External <Badge variant="secondary" className="ml-2 bg-muted">0</Badge>
+              ATS Boards <Badge variant="secondary" className="ml-2 bg-muted">{(jobsList || []).filter(j => ["greenhouse","lever","ashby"].includes(j.source || "")).length}</Badge>
             </TabsTrigger>
           </TabsList>
         </Tabs>
 
         <form onSubmit={handleSearch} className="relative flex-1 max-w-md ml-4">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-          <Input 
-            placeholder="Search by title or company" 
-            className="pl-10 bg-muted/50 border-border/50" 
+          <Input
+            placeholder="Search by title or company"
+            className="pl-10 bg-muted/50 border-border/50"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -332,6 +406,34 @@ export function DiscoveryFeed() {
             </div>
           )}
         </form>
+
+        {/* Import JSON / CSV */}
+        <input
+          id="job-import-input"
+          type="file"
+          accept=".json,.csv"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (!file) return
+            importMutation.mutate(file, {
+              onSuccess: (imported) => toast.success(`Imported ${imported.length} jobs`),
+              onError: (err: any) => toast.error(err.message || "Import failed"),
+            })
+            e.target.value = ""
+          }}
+        />
+        <Button
+          variant="outline"
+          className="border-border/50 bg-muted/30 shrink-0"
+          onClick={() => document.getElementById("job-import-input")?.click()}
+          disabled={importMutation.isPending}
+        >
+          {importMutation.isPending
+            ? <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin mr-2" />
+            : <Upload className="w-4 h-4 mr-2" />}
+          Import
+        </Button>
       </div>
 
       {/* Filter Badges */}
@@ -504,16 +606,59 @@ export function DiscoveryFeed() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <Button variant="outline" className="border-border/50 bg-muted/30 rounded-xl">
-          <span className="flex items-center gap-2">
-            Hidden Jobs
-          </span>
+        <Button
+          variant="outline"
+          onClick={() => setShowHidden(p => !p)}
+          className={cn(
+            "border-border/50 bg-muted/30 rounded-xl",
+            showHidden && "border-primary bg-primary/10"
+          )}
+        >
+          <Ban className="w-4 h-4 mr-2" />
+          Hidden {hiddenJobs.length > 0 && <Badge variant="secondary" className="ml-1 bg-muted">{hiddenJobs.length}</Badge>}
         </Button>
 
-        <Button variant="outline" className="border-primary text-primary">
-          <MoreHorizontal className="w-4 h-4 mr-2" />
-          All Filters
-        </Button>
+        {/* Source filter */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              className={cn(
+                "border-border/50 bg-muted/30 hover:bg-muted/50 rounded-xl",
+                activeFilters.source?.length && "border-primary bg-primary/10"
+              )}
+            >
+              <Globe className="w-4 h-4 mr-2" />
+              Source
+              {activeFilters.source?.length ? <Badge className="ml-2 bg-primary text-primary-foreground text-xs">+{activeFilters.source.length}</Badge> : null}
+              <ChevronDown className="w-4 h-4 ml-2" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="bg-popover border-border min-w-[200px]">
+            {sourceOptions.map(opt => (
+              <DropdownMenuCheckboxItem
+                key={opt.value}
+                className="cursor-pointer"
+                checked={activeFilters.source?.includes(opt.value)}
+                onCheckedChange={() => toggleFilter("source", opt.value)}
+                onSelect={(e) => e.preventDefault()}
+              >
+                {opt.label}
+              </DropdownMenuCheckboxItem>
+            ))}
+            {activeFilters.source?.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-center justify-center text-xs text-muted-foreground"
+                  onSelect={() => setActiveFilters(prev => ({ ...prev, source: [] }))}
+                >
+                  Clear Filter
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <div className="ml-auto flex items-center gap-2">
           <Select value={sortBy} onValueChange={setSortBy}>
@@ -577,6 +722,7 @@ export function DiscoveryFeed() {
                             Be an early applicant
                           </Badge>
                         )}
+                        <LegitimacyBadge jobId={job.id} verdict={job.posting_legitimacy} />
                       </div>
                       
                       {/* Title & Company */}
@@ -597,9 +743,16 @@ export function DiscoveryFeed() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="bg-popover border-border">
-                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); }}>
+                      <DropdownMenuItem
+                        onClick={(e) => handleCheckLegitimacy(job.id, e)}
+                        disabled={checkingLegitimacy[job.id]}
+                      >
+                        <Shield className="w-4 h-4 mr-2" />
+                        {checkingLegitimacy[job.id] ? "Checking..." : "Check Legitimacy"}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(job.url); toast.success("Link copied to clipboard") }}>
                         <Share2 className="w-4 h-4 mr-2" />
-                        Share
+                        Copy Link
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={(e) => { e.stopPropagation(); }}>
                         <Flag className="w-4 h-4 mr-2" />
@@ -659,11 +812,18 @@ export function DiscoveryFeed() {
                     >
                       <Heart className={`w-5 h-5 ${savedJobs.includes(job.id) ? "fill-current" : ""}`} />
                     </Button>
-                    <Button variant="outline" className="border-border/50">
+                    <Button
+                      variant="outline"
+                      className="border-border/50"
+                      onClick={(e) => { e.stopPropagation(); router.push("/dashboard/discovery/" + job.id) }}
+                    >
                       <Sparkles className="w-4 h-4 mr-2" />
-                      ASK ORION
+                      ANALYZE
                     </Button>
-                    <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
+                    <Button
+                      className="bg-primary text-primary-foreground hover:bg-primary/90"
+                      onClick={(e) => { e.stopPropagation(); window.open(job.url, "_blank", "noopener,noreferrer") }}
+                    >
                       APPLY NOW
                     </Button>
                   </div>

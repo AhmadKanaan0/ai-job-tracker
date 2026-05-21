@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
-import type { Analysis, AnalyzePayload, ATSPayload, FixCVPayload } from "@/lib/types";
+import type { Analysis, AnalyzePayload, ATSPayload, FixCVPayload, Job } from "@/lib/types";
 
 // ── Query Keys ─────────────────────────────────────────────────────────────
 
@@ -24,6 +24,14 @@ export function useAnalysis(jobId: number, cvId: number) {
     queryKey: analysisKeys.detail(jobId, cvId),
     queryFn: () => api.get<Analysis | null>(`/analyze/${jobId}/${cvId}`),
     enabled: !!jobId && !!cvId,
+  });
+}
+
+export function useAnalysisDetail(analysisId: number) {
+  return useQuery({
+    queryKey: [...analysisKeys.all, "detail-id", analysisId] as const,
+    queryFn: () => api.get<Analysis>(`/analyze/detail/${analysisId}`),
+    enabled: !!analysisId,
   });
 }
 
@@ -74,6 +82,30 @@ export function useFixCV() {
       api.post<Analysis>("/analyze/fix-cv", payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: analysisKeys.all });
+    },
+  });
+}
+
+export function useCvDiff() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: FixCVPayload) =>
+      api.post<Analysis>("/analyze/cv-diff", payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: analysisKeys.all });
+    },
+  });
+}
+
+export function useCheckLegitimacy() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (jobId: number) =>
+      api.post<Job>(`/jobs/${jobId}/check-legitimacy`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["jobs"] });
     },
   });
 }

@@ -296,7 +296,103 @@ Return JSON with this exact structure:
     return _parse_json(raw)
 
 
-# ── 4. Cover Letter Generator ────────────────────────────────────────────────
+# ── 4. CV Diff (structured change plan, no full rewrite) ────────────────────
+
+def generate_cv_diff(cv_text: str, job_description: str, job_title: str) -> dict:
+    """
+    Analyse CV vs job and return a prioritised list of specific changes —
+    no full rewrite. Each change identifies before/after text at the section level.
+    """
+    system = (
+        "You are a senior CV coach and ATS expert. "
+        "Compare a candidate's CV against a job description and identify the most impactful edits. "
+        "Do NOT rewrite the entire CV. Return a short, actionable list of changes. "
+        "Do NOT fabricate experience or skills. "
+        "Respond with valid JSON only — no preamble, no markdown fences."
+    )
+    user = f"""
+Target Role: {job_title}
+
+--- JOB DESCRIPTION ---
+{job_description}
+
+--- CANDIDATE CV ---
+{cv_text}
+
+Return JSON with this exact structure:
+{{
+  "changes": [
+    {{
+      "section": "<CV section: Summary | Skills | Experience | Education | Projects | Other>",
+      "priority": "<high | medium | low>",
+      "type": "<rewrite | add | remove | keyword>",
+      "original": "<exact or near-exact excerpt from the current CV, or empty string if adding new content>",
+      "suggested": "<the improved replacement text>",
+      "reason": "<one sentence: why this change improves fit for this specific role>"
+    }}
+  ],
+  "quick_wins": [
+    "<actionable one-liner the candidate can do in under 2 minutes>",
+    "<another quick win>",
+    "<another quick win>"
+  ],
+  "ats_improvement": "<one sentence estimating ATS score change, e.g. 'Estimated ATS pass-rate improves from ~55% to ~80% by adding 6 missing keywords.'>"
+}}
+
+Rules:
+- Return 4-8 changes ranked by priority (high first).
+- The `original` field must quote actual text from the CV so the user can find it.
+- Keep `suggested` concise — a sentence or short bullet, not a full paragraph.
+"""
+    raw = _ask(system, user, max_tokens=2500)
+    return _parse_json(raw)
+
+
+# ── 5. Posting Legitimacy Check ──────────────────────────────────────────────
+
+def check_posting_legitimacy(job_title: str, company: str, description: str, posted_at: str = "", url: str = "") -> dict:
+    """
+    Analyse a job posting for red flags: ghost listings, no salary, old post,
+    suspicious patterns, etc. Returns a verdict + signals.
+    """
+    system = (
+        "You are a job market analyst helping candidates avoid wasted effort on suspect job postings. "
+        "Evaluate the posting for signs of being a ghost listing, scam, or low-quality opportunity. "
+        "Be fair but direct. Respond with valid JSON only."
+    )
+    user = f"""
+Job Title: {job_title}
+Company: {company}
+Posted: {posted_at or "unknown"}
+URL: {url or "not provided"}
+
+--- JOB DESCRIPTION ---
+{description[:3000]}
+
+Evaluate this posting and return JSON:
+{{
+  "verdict": "<high_confidence | proceed_with_caution | suspicious>",
+  "signals": [
+    {{
+      "signal": "<specific observation, e.g. 'No salary range disclosed'>",
+      "severity": "<low | medium | high>"
+    }}
+  ],
+  "summary": "<2-3 sentence plain-English verdict explaining the overall assessment>"
+}}
+
+Scoring guide:
+- high_confidence: clear role, named hiring manager or team, salary disclosed, recent post, clean apply flow
+- proceed_with_caution: some concerns (no salary, vague role, older post, generic description) but not outright suspicious
+- suspicious: multiple red flags (no salary + no company info + very old + copy-pasted boilerplate + no apply button)
+
+Return 2-5 signals. Be concise.
+"""
+    raw = _ask(system, user, max_tokens=1000)
+    return _parse_json(raw)
+
+
+# ── 6. Cover Letter Generator ────────────────────────────────────────────────
 
 TONE_INSTRUCTIONS = {
     "professional": "formal, confident, third-person references to the company",
@@ -398,7 +494,7 @@ Write the cover letter now:
     return _ask(system, user, max_tokens=2500)
 
 
-# ── 5. Extract Profile from CV ───────────────────────────────────────────────
+# ── 7. Extract Profile from CV ───────────────────────────────────────────────
 
 def extract_profile_from_cv(cv_text: str) -> dict:
     """
@@ -450,7 +546,7 @@ Return a JSON object with exactly these keys matching this schema:
     return _parse_json(raw)
 
 
-# ── 6. Optimize Job Description ──────────────────────────────────────────────
+# ── 8. Optimize Job Description ──────────────────────────────────────────────
 
 def optimize_job_description(description: str) -> str:
     """

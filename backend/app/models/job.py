@@ -28,6 +28,8 @@ class Job(Base):
     scraped_at = Column(DateTime(timezone=True), server_default=func.now())
     posted_at = Column(DateTime(timezone=True), nullable=True)
     formatted_description = Column(Text, nullable=True)
+    posting_legitimacy = Column(String, nullable=True)  # high_confidence / proceed_with_caution / suspicious
+    legitimacy_signals = Column(JSON, nullable=True)    # {verdict, signals: [{signal, severity}], summary}
 
     tracked = relationship("TrackedJob", back_populates="job")
     analyses = relationship("JobAnalysis", back_populates="job")

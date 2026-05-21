@@ -186,17 +186,14 @@ export default function JobDetailsPage({ params }: { params: Promise<{ id: strin
                 <MatchScoreGauge score={analysis?.match_score || 0} size="md" />
                 {analysis && (
                   <div className="mt-3 flex gap-4">
-                    {[
-                      { label: "ATS Score", val: `${analysis.ats_score || 0}%` },
-                      { label: "Skills", val: `${Math.round(((analysis.matched_skills?.length || 0) / ((analysis.matched_skills?.length || 0) + (analysis.missing_skills?.length || 0) || 1)) * 100)}%` },
-                    ].map(g => (
-                      <div key={g.label} className="text-center">
-                        <div className="w-10 h-10 mx-auto rounded-full border-2 border-primary/40 flex items-center justify-center mb-0.5">
-                          <span className="text-xs font-bold text-primary">{g.val}</span>
-                        </div>
-                        <span className="text-[10px] text-muted-foreground leading-tight block">{g.label}</span>
+                    <div className="text-center">
+                      <div className="w-10 h-10 mx-auto rounded-full border-2 border-primary/40 flex items-center justify-center mb-0.5">
+                        <span className="text-xs font-bold text-primary">
+                          {Math.round(((analysis.matched_skills?.length || 0) / ((analysis.matched_skills?.length || 0) + (analysis.missing_skills?.length || 0) || 1)) * 100)}%
+                        </span>
                       </div>
-                    ))}
+                      <span className="text-[10px] text-muted-foreground leading-tight block">Skills</span>
+                    </div>
                   </div>
                 )}
               </div>

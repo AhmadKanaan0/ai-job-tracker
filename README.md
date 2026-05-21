@@ -1,197 +1,218 @@
-# AI Job Tracker & Career Agent 🚀
+# AI Job Tracker & Career Agent
 
-An all-in-one, intelligent career agent designed to automate job discovery, analyze resume compatibility, generate personalized application materials, and manage your application pipeline. Powered by a Next.js frontend and a FastAPI backend with support for multiple AI models (Claude, Gemini, DeepSeek).
-
----
-
-## 🎨 System Features
-
-| Module | Core Functionality | Details & Integrations |
-| :--- | :--- | :--- |
-| **🔍 Multi-Level Job Discovery** | Visual Scraping, ATS API Scanning, & Global Search | Scrapes directly from **We Work Remotely**, **Remotive**, **RemoteOK**, **Himalayas**, and company ATS platforms (**Greenhouse**, **Lever**, **Ashby**). Falls back to **Playwright** for visual scraping of Javascript-heavy job boards like Workday. |
-| **📊 ATS & Fit Analysis** | Multi-Provider AI Scoring & Feedback | Analyzes CV compatibility against any job description, yielding match scores, level strategy, keyword gaps, formatting issues, personalization tips, and custom interview prep questions. |
-| **📄 CV Parser & Manager** | Multi-Format Document Parsing & Versioning | Upload CVs (`.pdf` or `.docx`), auto-extract profile details via AI for onboarding, and maintain historical versions of targeted CVs. |
-| **✍️ Cover Letter Generator** | Tailored application writing | Generates highly personalized cover letters highlighting candidate credentials directly aligned with the job requirements. Supports **Professional**, **Friendly**, and **Concise** tones. |
-| **📋 Kanban Tracker & Analytics**| Pipeline tracking & analytics | Visual board tracking application stages from Saved → Applied → Interviewing → Offer → Rejected. Features analytics charts powered by Recharts. |
+An all-in-one intelligent career agent that automates job discovery, analyzes resume compatibility, generates personalized application materials, and manages your full application pipeline. Powered by a Next.js frontend and a FastAPI backend with support for multiple AI providers.
 
 ---
 
-## 🛠️ Technology Stack
+## Features
 
-The project is structured as a monorepo featuring a decoupled frontend client and backend API server.
+| Module | Description |
+| :--- | :--- |
+| **Job Discovery** | Profile-based auto-search on startup across 22 job portals simultaneously. Filter by source, location, role, level, type, workplace, date, experience. Tabs for Liked, Applied, and ATS Board jobs. |
+| **Job Import** | Bulk-import jobs from a `.json` or `.csv` file. Flexible field mapping handles any common column naming convention. |
+| **AI Analysis** | Match score, skills gap, level strategy, ATS issues, personalization tips, and interview prep — all generated per job/CV pair. |
+| **CV Diff Viewer** | Structured before → after change plan per CV section (rewrite / add / remove / keyword). Priority-ranked, accept or dismiss per change. |
+| **Posting Legitimacy** | AI flags ghost listings, missing salary, suspicious patterns. Verdict: Verified / Caution / Suspicious — shown inline on job cards. |
+| **Pipeline Board** | Stats cards, status distribution bar, sortable table with inline status updates, CV and Report actions per row. |
+| **Reports** | Full career-ops style evaluation report per job: role summary, matched/missing skills, level strategy, CV diff, ATS issues, interview questions, legitimacy signals. |
+| **Cover Letter Generator** | Tailored cover letters in Professional, Friendly, or Concise tone. |
+| **CV Manager** | Upload PDF or DOCX, auto-extract profile via AI, maintain multiple CV versions. |
+| **Application Tracker** | Track applications from Saved → Applied → Screening → Interview → Final Round → Offer / Rejected. |
+
+---
+
+## Job Sources (22 portals)
+
+| Type | Portals |
+| :--- | :--- |
+| **JSON APIs** | We Work Remotely, Remotive, RemoteOK, Himalayas, Working Nomads, HN Who's Hiring (Algolia), YC Work at a Startup |
+| **ATS Boards** | Greenhouse, Lever, Ashby, Workable |
+| **HTML Scrapers** | ai-jobs.net, EU Remote Jobs, Nodesk, Truly Remote, Forward Deploy, Welcome to the Jungle, TrueUp, Remote Rocketship, DevRel Job |
+| **Spain** | Getmanfred, Tecnoempleo, JobFluent |
+| **Via JSearch API** | LinkedIn, Indeed + expanded `site:` WebSearch across all portals above |
+
+All sources run in parallel via `asyncio.gather`. Failed sources return `[]` silently without affecting others.
+
+---
+
+## Tech Stack
 
 ### Frontend
-* **Core Framework**: [Next.js 16.2](https://nextjs.org/) (React 19) with TypeScript
-* **State Management & Caching**: [React Query (TanStack Query v5)](https://tanstack.com/query/latest)
-* **Styling**: [Tailwind CSS v4](https://tailwindcss.com/)
-* **Component Library**: [Radix UI primitives](https://www.radix-ui.com/) with customized Premium components (Shadcn CSS UI)
-* **Form & Validation**: [React Hook Form](https://react-hook-form.com/) & [Zod](https://zod.dev/)
-* **Analytics & Charts**: [Recharts](https://recharts.org/)
-* **Markdown Rendering**: [React Markdown](https://github.com/remarkjs/react-markdown) & [Remark GFM](https://github.com/remarkjs/remark-gfm)
-* **Icons**: [Lucide React](https://lucide.dev/)
-* **Toasts & Feedback**: [Sonner](https://emilkowalski.github.io/sonner/)
+- **Next.js 16.2** (React 19, App Router) — TypeScript
+- **TanStack Query v5** — server state & caching
+- **Tailwind CSS v4** + **Radix UI / shadcn**
+- **Recharts** — analytics charts
+- **Lucide React** — icons
+- **Sonner** — toasts
 
 ### Backend
-* **API Framework**: [FastAPI (0.115.0)](https://fastapi.tiangolo.com/) with Uvicorn standard server
-* **Database & Migrations**: [PostgreSQL](https://www.postgresql.org/) with [SQLAlchemy 2.0 ORM](https://www.sqlalchemy.org/) & [Alembic](https://alembic.sqlalchemy.org/) migrations
-* **AI Provider Suite**: Multi-engine wrapper supporting:
-  * **Claude** (Anthropic API `claude-3-5-sonnet-20240620`)
-  * **Gemini** (Google GenAI API `gemini-3-flash-preview`)
-  * **DeepSeek** (DeepSeek API `deepseek-chat` via OpenAI SDK client compatibility)
-* **Scraping Engine**:
-  * Visual JS-rendering fallback using **Playwright**
-  * Raw HTML parser using **BeautifulSoup4**
-  * Direct HTTP integrations using **HTTPX**
-* **Document Extraction**: **PDFPlumber** for resumes, **python-docx** for Word documents
-* **Auth**: **JWT Tokens** with **python-jose** (cryptography) and **Passlib** (bcrypt)
-* **Task Queues**: **Celery** with **Redis** for asynchronous processing
-* **File Storage**: Local directory storage with toggleable fallback to **Amazon S3 / Cloudflare R2** via **Boto3**
+- **FastAPI 0.115** + **Uvicorn**
+- **PostgreSQL** + **SQLAlchemy 2.0** ORM + **Alembic** migrations
+- **AI providers** (switchable via `AI_PROVIDER` env var):
+  - Claude — `claude-3-5-sonnet-20240620`
+  - Gemini — `gemini-3-flash-preview`
+  - DeepSeek — `deepseek-chat` (OpenAI-compatible)
+- **Scraping** — HTTPX + BeautifulSoup4 + Playwright (SPA fallback)
+- **Document parsing** — PDFPlumber + python-docx
+- **Auth** — JWT (python-jose) + bcrypt (Passlib)
+- **File storage** — local or S3/Cloudflare R2 (Boto3)
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
-```text
+```
 ai-job-tracker/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py              # FastAPI app setup, middleware, router mounts
-│   │   ├── core/                # DB connections, Security, Pydantic settings
-│   │   ├── models/              # SQLAlchemy DB models (User, CV, Job, Tracker, Analysis)
-│   │   ├── schemas/             # Pydantic validation schemas
-│   │   ├── routers/             # API endpoint definitions
-│   │   └── services/            # Core business logic (AI, Parser, Scraper, Storage)
-│   ├── alembic/                 # Alembic DB migration environment and history
-│   ├── uploads/                 # Local uploads storage directory (if enabled)
-│   ├── .env.example             # Template for backend settings
-│   └── requirements.txt         # Python package dependencies
+│   │   ├── main.py              # FastAPI app, middleware, router mounts
+│   │   ├── core/                # DB, security, settings
+│   │   ├── models/              # SQLAlchemy models (User, CV, Job, Tracker, Analysis)
+│   │   ├── schemas/             # Pydantic schemas
+│   │   ├── routers/             # API endpoints
+│   │   └── services/            # AI, scraper, CV parser, storage
+│   ├── alembic/                 # Migration history
+│   ├── migrate_add_columns.py   # One-time column additions (run after alembic)
+│   ├── uploads/                 # Local file storage
+│   └── requirements.txt
 ├── frontend/
-│   ├── app/                     # Next.js App Router (Dashboard, Onboarding, Auth, Setup)
-│   ├── components/              # Shared UI and page-specific React components
-│   ├── hooks/                   # Custom React hooks (React Query integrations)
-│   ├── lib/                     # API utility clients and helper functions
-│   ├── styles/                  # Tailwind CSS setups and global styles
-│   ├── package.json             # Frontend package declarations
-│   └── tsconfig.json            # TypeScript configuration
-├── test_apis.py                 # Scraping test script for Greenhouse/Ashby APIs
-└── README.md                    # Root project documentation
+│   ├── app/
+│   │   ├── dashboard/
+│   │   │   ├── page.tsx         # Dashboard home (KPIs, pipeline, activity)
+│   │   │   ├── discovery/       # Job discovery feed + detail
+│   │   │   ├── analyzer/        # AI job analyzer
+│   │   │   ├── pipeline/        # Pipeline board
+│   │   │   ├── tracker/         # Application tracker
+│   │   │   ├── reports/         # Analysis reports list + detail
+│   │   │   ├── cv-manager/      # CV upload and management
+│   │   │   └── profile/         # User profile & settings
+│   ├── components/job-tracker/  # All page components
+│   ├── hooks/                   # React Query hooks
+│   └── lib/                     # API client, types, utils
+└── README.md
 ```
 
 ---
 
-## 🚀 Quick Start & Installation
+## Quick Start
 
-### 1. Prerequisites
-Ensure you have the following installed on your machine:
-* **Python 3.11+**
-* **Node.js 18+** & **npm** (or yarn/pnpm)
-* **PostgreSQL** running locally or a remote instance (e.g., Supabase)
-* **Redis** (optional, required if using Celery async worker features)
-
----
-
-### 2. Backend Setup
-
-1. **Navigate to the backend directory and create a virtual environment:**
-   ```bash
-   cd backend
-   python -m venv venv
-   ```
-
-2. **Activate the virtual environment:**
-   * **Windows (PowerShell/CMD):**
-     ```powershell
-     venv\Scripts\activate
-     ```
-   * **macOS/Linux:**
-     ```bash
-     source venv/bin/activate
-     ```
-
-3. **Install python packages:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Install Playwright dependencies (for level-1 visual scraping fallback):**
-   ```bash
-   playwright install chromium
-   ```
-
-5. **Configure environment variables:**
-   Copy the example file and populate it with your database and API keys:
-   ```bash
-   cp .env.example .env
-   ```
-   Edit the `.env` file to configure your database connection and chosen AI engine:
-   ```env
-   # Setup database connection
-   DATABASE_URL=postgresql://postgres:password@localhost:5432/jobhunt
-   
-   # Toggle preferred AI provider: "claude", "gemini", or "deepseek"
-   AI_PROVIDER=claude
-   ANTHROPIC_API_KEY=your-api-key-here
-   
-   # Optional: LinkedIn/Indeed search via RapidAPI JSearch
-   JSEARCH_API_KEY=your-rapidapi-key
-   ```
-
-6. **Prepare the database & run migrations:**
-   Create a database named `jobhunt` inside your PostgreSQL database server, then upgrade schema:
-   ```bash
-   alembic upgrade head
-   ```
-
-7. **Launch the backend server:**
-   ```bash
-   uvicorn app.main:app --reload --port 8000
-   ```
-   * Interactive OpenAPI documentation is accessible at **`http://localhost:8000/docs`**.
+### Prerequisites
+- Python 3.11+
+- Node.js 18+ and npm
+- PostgreSQL
+- Redis (optional — only needed for Celery async tasks)
 
 ---
 
-### 3. Frontend Setup
+### Backend
 
-1. **Navigate to the frontend directory:**
-   ```bash
-   cd ../frontend
-   ```
+```bash
+cd backend
+python -m venv venv
 
-2. **Install Node dependencies:**
-   ```bash
-   npm install
-   ```
+# Windows
+venv\Scripts\activate
+# macOS / Linux
+source venv/bin/activate
 
-3. **Configure client environment variables:**
-   Verify or create a `.env.local` containing:
-   ```env
-   NEXT_PUBLIC_API_URL=http://localhost:8000
-   ```
+pip install -r requirements.txt
+playwright install chromium
+```
 
-4. **Start the Next.js development server:**
-   ```bash
-   npm run dev
-   ```
-   * The client app is accessible at **`http://localhost:3000`**.
+Copy and configure environment variables:
+
+```bash
+cp .env.example .env
+```
+
+```env
+DATABASE_URL=postgresql://postgres:password@localhost:5432/jobhunt
+
+# AI provider: "claude", "gemini", or "deepseek"
+AI_PROVIDER=claude
+ANTHROPIC_API_KEY=your-key
+
+# Optional: LinkedIn / Indeed via RapidAPI JSearch
+JSEARCH_API_KEY=your-rapidapi-key
+```
+
+Create the database and run migrations:
+
+```bash
+# Create schema (tables)
+alembic upgrade head
+
+# Add columns to existing tables (safe to run multiple times)
+python migrate_add_columns.py
+```
+
+Start the server:
+
+```bash
+uvicorn app.main:app --reload --port 8000
+# Swagger docs → http://localhost:8000/docs
+```
 
 ---
 
-## 🦾 Multi-Level Job Discovery System
+### Frontend
 
-Our ingestion pipeline runs on a 3-tier architecture:
-1. **Level 1 (Visual Scraper)**: Playwright automates Visual Browser scraping to bypass SPA/React dynamic page loads (e.g. Workday job portals).
-2. **Level 2 (Zero-Token ATS APIs)**: Direct integrations with public company job feeds for **Greenhouse**, **Lever**, and **Ashby**.
-3. **Level 3 (Search API)**: JSearch API via RapidAPI pulls live LinkedIn, Indeed, and Google Jobs postings, with WebSearch fallback.
+```bash
+cd frontend
+npm install
+```
+
+Create `.env.local`:
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+Start the dev server:
+
+```bash
+npm run dev
+# App → http://localhost:3000
+```
 
 ---
 
-## ☁️ Deployment
+## Job Import Format
 
-When migrating to production environments, configure these settings:
+**JSON** (`/jobs/import`):
+```json
+[
+  {
+    "title": "Senior Software Engineer",
+    "company": "Acme Corp",
+    "url": "https://example.com/jobs/123",
+    "location": "Remote",
+    "description": "...",
+    "salary_min": 120000,
+    "salary_max": 160000,
+    "tags": ["python", "fastapi", "postgresql"]
+  }
+]
+```
 
-| Service | Development Setup | Production Recommendation |
+**CSV** — any of these column names are recognized automatically:
+`title` / `job_title` / `position`, `company` / `employer`, `url` / `link` / `apply_url`, `description` / `job_description`, `salary_min` / `min_salary`, `salary_max` / `max_salary`, `tags` / `skills` (comma-separated)
+
+---
+
+## Multi-Level Discovery Architecture
+
+1. **Level 1 — Visual (Playwright)**: renders JS-heavy SPAs (e.g. Workday) headlessly
+2. **Level 2 — ATS JSON APIs**: Greenhouse, Lever, Ashby, Workable — structured feeds, no tokens needed
+3. **Level 3 — JSearch WebSearch**: LinkedIn, Indeed + `site:` filtered search across all 22 portals (requires RapidAPI key)
+
+---
+
+## Deployment
+
+| Service | Development | Production |
 | :--- | :--- | :--- |
-| **Database** | PostgreSQL (Local) | [Supabase Database](https://supabase.com) (Postgres Hosting) |
-| **File Storage** | Local directory `/uploads` | [Cloudflare R2](https://www.cloudflare.com/developer-platform/r2/) or Amazon S3 |
-| **Backend API** | Uvicorn (Local) | Railway, Render, or AWS ECS |
-| **Frontend Client** | Next Dev Server (Local) | [Vercel](https://vercel.com) |
+| Database | PostgreSQL local | Supabase / Neon |
+| File storage | Local `/uploads` | Cloudflare R2 or AWS S3 |
+| Backend | Uvicorn local | Railway / Render / AWS ECS |
+| Frontend | Next.js dev server | Vercel |

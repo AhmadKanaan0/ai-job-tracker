@@ -6,7 +6,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.job import Job
-from app.schemas.jobs import JobOut, JobSearch, ScrapeRequest
+from app.schemas.jobs import JobOut, JobSearch, ScrapeRequest, ScanBoardRequest
 from app.services import scraper, ai_service
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
@@ -21,18 +21,102 @@ async def search_jobs(
     """
     Search jobs across all portals (WWR, Remotive, RemoteOK, Himalayas,
     and optionally LinkedIn/Indeed if JSearch API key is set).
+    Enriches the query with user profile data for more relevant results.
     Results are saved to the DB automatically for tracking later.
     """
+    # ── Build an enriched query from user profile ─────────────────────────
+    query = payload.query.strip()
+    user_skills = current_user.skills or []
+    user_experiences = current_user.experiences or []
+
+    # Extract job titles from past experience for relevance
+    experience_titles = []
+    for exp in user_experiences[:3]:  # top 3 most recent
+        if isinstance(exp, dict) and exp.get("jobTitle"):
+            experience_titles.append(exp["jobTitle"])
+
+    # If the query is short/generic, enrich with top skills
+    if len(query.split()) <= 3 and user_skills:
+        top_skills = user_skills[:5]  # top 5 skills
+        query = f"{query} {' '.join(top_skills)}"
+
+    # Determine location and remote preferences
+    location = payload.location or current_user.preferred_location or None
+    remote_only = payload.remote_only or (current_user.open_to_remote and not location)
+
     raw_jobs = await scraper.search_jobs(
-        query=payload.query,
-        location=payload.location,
-        remote_only=payload.remote_only,
+        query=query,
+        location=location,
+        remote_only=remote_only,
         sources=payload.sources,
-        limit=payload.limit,
+        limit=payload.limit * 2,  # fetch extra to allow filtering
     )
 
+    # ── Relevance filtering ──────────────────────────────────────────────
+    # Build a set of relevant keywords from user profile
+    desired_roles = current_user.desired_roles or []
+    relevance_keywords = set()
+
+    # Add words from desired roles
+    for role in desired_roles:
+        for word in role.lower().split():
+            if len(word) > 2:  # skip tiny words like "a", "an"
+                relevance_keywords.add(word)
+
+    # Add words from skills
+    for skill in user_skills:
+        relevance_keywords.add(skill.lower())
+
+    # Add words from past job titles
+    for title in experience_titles:
+        for word in title.lower().split():
+            if len(word) > 2:
+                relevance_keywords.add(word)
+
+    # Add the original query words
+    for word in payload.query.lower().split():
+        if len(word) > 2:
+            relevance_keywords.add(word)
+
+    # Common tech/engineering terms to always allow
+    tech_terms = {
+        "software", "engineer", "developer", "frontend", "backend", "fullstack",
+        "full-stack", "devops", "data", "machine", "learning", "cloud", "mobile",
+        "web", "api", "platform", "infrastructure", "security", "product",
+        "design", "designer", "ux", "ui", "architect", "scientist", "analyst",
+        "qa", "test", "automation", "sre", "reliability",
+    }
+    relevance_keywords.update(tech_terms)
+
+    # Irrelevant industry terms to hard-exclude
+    exclude_terms = {
+        "attorney", "lawyer", "paralegal", "legal counsel",
+        "nurse", "nursing", "physician", "medical", "clinical", "pharmacy",
+        "dentist", "dental", "therapist", "healthcare aide",
+        "truck driver", "cdl", "forklift", "warehouse associate",
+        "cashier", "barista", "janitor", "custodian",
+        "real estate agent", "loan officer", "mortgage",
+    }
+
+    def is_relevant(job_title: str) -> bool:
+        title_lower = job_title.lower()
+        # Hard-exclude obvious mismatches
+        for term in exclude_terms:
+            if term in title_lower:
+                return False
+        # Check if any relevance keyword appears in the title
+        if relevance_keywords:
+            return any(kw in title_lower for kw in relevance_keywords)
+        return True  # no filters set → allow everything
+
+    filtered_jobs = [j for j in raw_jobs if is_relevant(j.get("title", ""))]
+
+    # Fall back to unfiltered if filter is too aggressive (< 5 results)
+    if len(filtered_jobs) < 5 and len(raw_jobs) > 5:
+        filtered_jobs = raw_jobs
+
     saved = []
-    for j in raw_jobs:
+    for j in filtered_jobs[:payload.limit]:
         if not j.get("url"):
             continue
         # Upsert by URL — don't create duplicates
@@ -105,6 +189,49 @@ async def scrape_single(
     return job
 
 
+@router.post("/scan-board", response_model=List[JobOut], status_code=201)
+async def scan_board(
+    payload: ScanBoardRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Scan an entire company's job board via ATS JSON API (Level 2).
+    """
+    try:
+        new_jobs_data = await scraper.scan_company_board(payload.company, payload.ats_type)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Could not scan board: {e}")
+
+    saved_jobs = []
+    for j_data in new_jobs_data:
+        if not j_data.get("url"):
+            continue
+        
+        # Deduplicate
+        existing = db.query(Job).filter(Job.url == j_data["url"]).first()
+        if existing:
+            continue
+            
+        job = Job(
+            title=j_data["title"],
+            company=j_data["company"],
+            location=j_data.get("location"),
+            remote=j_data.get("remote"),
+            url=j_data["url"],
+            source=j_data.get("source"),
+            posted_at=j_data.get("posted_at")
+        )
+        db.add(job)
+        saved_jobs.append(job)
+        
+    db.commit()
+    for job in saved_jobs:
+        db.refresh(job)
+        
+    return saved_jobs
+
+
 @router.get("/", response_model=list[JobOut])
 def list_jobs(
     source: Optional[str] = Query(None),
@@ -114,13 +241,34 @@ def list_jobs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List all scraped jobs in the DB with optional filters."""
+    """List all scraped jobs in the DB with optional filters, joined with match scores."""
+    from app.models.analysis import JobAnalysis
+    from app.models.cv import CV
+
+    active_cv = db.query(CV).filter(CV.user_id == current_user.id, CV.is_active == True).first()
+    
     q = db.query(Job)
     if source:
         q = q.filter(Job.source == source)
     if remote:
         q = q.filter(Job.remote == remote)
-    return q.order_by(Job.scraped_at.desc()).offset(offset).limit(limit).all()
+
+    jobs = q.order_by(Job.scraped_at.desc()).offset(offset).limit(limit).all()
+    
+    # If we have an active CV, try to attach scores
+    if active_cv:
+        job_ids = [j.id for j in jobs]
+        analyses = db.query(JobAnalysis).filter(
+            JobAnalysis.job_id.in_(job_ids),
+            JobAnalysis.user_id == current_user.id,
+            JobAnalysis.cv_id == active_cv.id
+        ).all()
+        
+        scores_map = {a.job_id: a.match_score for a in analyses}
+        for j in jobs:
+            j.match_score = scores_map.get(j.id)
+
+    return jobs
 
 
 @router.get("/{job_id}", response_model=JobOut)
@@ -129,9 +277,23 @@ def get_job(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    from app.models.analysis import JobAnalysis
+    from app.models.cv import CV
+
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    
+    active_cv = db.query(CV).filter(CV.user_id == current_user.id, CV.is_active == True).first()
+    if active_cv:
+        analysis = db.query(JobAnalysis).filter(
+            JobAnalysis.job_id == job_id,
+            JobAnalysis.user_id == current_user.id,
+            JobAnalysis.cv_id == active_cv.id
+        ).first()
+        if analysis:
+            job.match_score = analysis.match_score
+
     return job
 
 

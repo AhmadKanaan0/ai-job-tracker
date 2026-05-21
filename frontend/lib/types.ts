@@ -8,7 +8,6 @@
 export interface User {
   id: number;
   email: string;
-  full_name: string | null;
   first_name: string | null;
   last_name: string | null;
   is_active: boolean;
@@ -55,7 +54,6 @@ export interface Experience {
 }
 
 export interface UserUpdate {
-  full_name?: string;
   first_name?: string;
   last_name?: string;
   phone?: string;
@@ -78,7 +76,8 @@ export interface UserUpdate {
 
 export interface RegisterPayload {
   email: string;
-  full_name?: string;
+  first_name?: string;
+  last_name?: string;
   password: string;
 }
 

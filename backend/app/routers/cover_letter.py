@@ -35,14 +35,26 @@ def generate(
         raise HTTPException(status_code=404, detail="CV not found")
 
     try:
+        # Build user display name
+        user_name = ""
+        if current_user.first_name or current_user.last_name:
+            user_name = f"{current_user.first_name or ''} {current_user.last_name or ''}".strip()
+
         content = ai_service.generate_cover_letter(
             cv_text=cv.parsed_text,
             job_description=job.description,
             job_title=job.title,
             company=job.company,
             tone=payload.tone,
+            user_name=user_name,
+            user_email=current_user.email or "",
+            user_phone=current_user.phone or "",
+            user_city=current_user.city or "",
+            user_country=current_user.country or "",
         )
     except Exception as e:
+        if e.__class__.__name__ == "HTTPException":
+            raise e
         raise HTTPException(status_code=502, detail=f"AI service error: {e}")
 
     letter = CoverLetter(

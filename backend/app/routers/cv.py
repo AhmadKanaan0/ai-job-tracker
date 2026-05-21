@@ -68,12 +68,10 @@ async def upload_cv(
         if profile_data.get("skills"):
             current_user.skills = profile_data["skills"]
             
-        # Update full_name if possible
-        if profile_data.get("first_name") and profile_data.get("last_name"):
-            current_user.full_name = f"{profile_data['first_name']} {profile_data['last_name']}"
-            
     except Exception as e:
-        # Ignore extraction failures, CV is still uploaded
+        if e.__class__.__name__ == "HTTPException":
+            raise e
+        # Ignore extraction failures for other errors, CV is still uploaded
         print(f"Failed to extract profile data from CV: {e}")
 
     db.commit()

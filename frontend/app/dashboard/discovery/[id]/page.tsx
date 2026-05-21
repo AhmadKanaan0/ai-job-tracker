@@ -51,16 +51,27 @@ export default function JobDetailsPage({ params }: { params: Promise<{ id: strin
 
   const [resumeOpen, setResumeOpen] = useState(false);
   const [coverOpen, setCoverOpen] = useState(false);
+  const [hasAttemptedOptimize, setHasAttemptedOptimize] = useState(false);
+  const [hasAttemptedAnalysis, setHasAttemptedAnalysis] = useState(false);
 
   const isAnalyzing = fullAnalysis.isPending;
   const isOptimizing = optimizeJob.isPending;
 
   // Auto-optimize description if missing
   useEffect(() => {
-    if (job && !job.formatted_description && !optimizeJob.isPending) {
+    if (job && !job.formatted_description && !optimizeJob.isPending && !hasAttemptedOptimize) {
+      setHasAttemptedOptimize(true);
       optimizeJob.mutate(jobId);
     }
-  }, [job, jobId, optimizeJob.isPending]);
+  }, [job, jobId, optimizeJob.isPending, hasAttemptedOptimize]);
+
+  // Auto-analyze fit if missing
+  useEffect(() => {
+    if (job && activeCv && !analysis && !analysisLoading && !fullAnalysis.isPending && !hasAttemptedAnalysis) {
+      setHasAttemptedAnalysis(true);
+      fullAnalysis.mutate({ job_id: jobId, cv_id: activeCv.id });
+    }
+  }, [job, activeCv, analysis, analysisLoading, jobId, fullAnalysis.isPending, hasAttemptedAnalysis]);
 
   const handleAnalyzeFit = async () => {
     if (!activeCv) {
@@ -90,6 +101,8 @@ export default function JobDetailsPage({ params }: { params: Promise<{ id: strin
             onOpenChange={setResumeOpen} 
             jobId={jobId}
             cvId={activeCv.id}
+            jobTitle={job.title}
+            company={job.company}
           />
           <CoverLetterDrawer 
             open={coverOpen} 

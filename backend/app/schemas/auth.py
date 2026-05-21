@@ -5,7 +5,8 @@ from datetime import datetime
 
 class UserRegister(BaseModel):
     email: EmailStr
-    full_name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     password: str
 
 
@@ -15,7 +16,6 @@ class UserLogin(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    full_name: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     phone: Optional[str] = None
@@ -41,7 +41,6 @@ class UserUpdate(BaseModel):
 class UserOut(BaseModel):
     id: int
     email: str
-    full_name: Optional[str]
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     is_active: bool

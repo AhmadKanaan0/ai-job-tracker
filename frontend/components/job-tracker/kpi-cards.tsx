@@ -49,35 +49,47 @@ function KPICard({ title, value, change, color, data }: KPICardProps) {
   )
 }
 
-export function KPICards() {
+interface KPICardsProps {
+  totalApplications?: number
+  activeInterviews?: number
+  matchScoreAvg?: number
+  profileStrength?: number
+}
+
+export function KPICards({ 
+  totalApplications = 0, 
+  activeInterviews = 0, 
+  matchScoreAvg = 0, 
+  profileStrength = 0 
+}: KPICardsProps) {
   const cards: KPICardProps[] = [
     {
       title: "Total Applications",
-      value: 47,
-      change: "+12 this week",
+      value: totalApplications,
+      change: totalApplications > 0 ? `${totalApplications} tracked` : "Start applying!",
       color: "#00D4FF",
-      data: [20, 25, 22, 30, 35, 32, 47]
+      data: [0, Math.floor(totalApplications * 0.3), Math.floor(totalApplications * 0.5), Math.floor(totalApplications * 0.7), totalApplications]
     },
     {
       title: "Active Interviews",
-      value: 8,
-      change: "3 scheduled",
+      value: activeInterviews,
+      change: activeInterviews > 0 ? `${activeInterviews} in pipeline` : "None yet",
       color: "#A020F0",
-      data: [2, 4, 3, 5, 6, 5, 8]
+      data: [0, Math.floor(activeInterviews * 0.4), Math.floor(activeInterviews * 0.6), activeInterviews]
     },
     {
       title: "Match Score Avg",
-      value: "87%",
-      change: "+5% vs last month",
+      value: matchScoreAvg > 0 ? `${matchScoreAvg}%` : "—",
+      change: matchScoreAvg >= 80 ? "Excellent" : matchScoreAvg >= 60 ? "Good" : matchScoreAvg > 0 ? "Needs work" : "Analyze jobs to get scores",
       color: "#DFFF00",
-      data: [75, 78, 82, 80, 85, 84, 87]
+      data: [0, Math.floor(matchScoreAvg * 0.5), Math.floor(matchScoreAvg * 0.8), matchScoreAvg]
     },
     {
       title: "Profile Strength",
-      value: "92%",
-      change: "Excellent",
+      value: `${profileStrength}%`,
+      change: profileStrength >= 80 ? "Excellent" : profileStrength >= 60 ? "Good" : "Complete your profile",
       color: "#FFD700",
-      data: [70, 75, 80, 85, 88, 90, 92]
+      data: [0, Math.floor(profileStrength * 0.4), Math.floor(profileStrength * 0.7), profileStrength]
     }
   ]
 

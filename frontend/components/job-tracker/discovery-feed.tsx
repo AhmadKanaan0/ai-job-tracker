@@ -74,6 +74,7 @@ const experienceOptions = [
 
 import { useJobs, useSearchJobs } from "@/hooks/use-jobs"
 import { useTrackedJobs } from "@/hooks/use-tracker"
+import { useActiveCV } from "@/hooks/use-cv"
 import { useAuth } from "@/lib/auth-context"
 import { useEffect, useMemo, useRef } from "react"
 import { toast } from "sonner"
@@ -91,9 +92,11 @@ export function DiscoveryFeed() {
 
   const { data: jobsList, isLoading } = useJobs()
   const { data: trackedJobs = [] } = useTrackedJobs()
+  const { data: activeCv } = useActiveCV()
   const { user } = useAuth()
   const searchMutation = useSearchJobs()
   const hasAutoSearched = useRef(false)
+  const [isProfileSearch, setIsProfileSearch] = useState(false)
 
   const isSearching = searchMutation.isPending
 
@@ -118,28 +121,97 @@ export function DiscoveryFeed() {
     fetchCountries()
   }, [])
 
+  // Auto-search on mount using user preferences — search bar stays empty
   useEffect(() => {
-    if (!isLoading && (!jobsList || jobsList.length === 0) && user && !hasAutoSearched.current) {
+    if (!isLoading && user && !hasAutoSearched.current) {
       hasAutoSearched.current = true
-      const preferredRole = user.desired_roles?.[0] || "Software Engineer"
-      const preferredLoc = user.preferred_location || undefined
+      setIsProfileSearch(true)
+
+      // Build a rich query from user profile without populating the search bar
+      const roles = user.desired_roles || []
+      const skills = user.skills || []
+      const experiences = user.experiences || []
+
+      // Extract job titles from past experience
+      const experienceTitles: string[] = []
+      for (const exp of experiences.slice(0, 3)) {
+        if (exp.jobTitle) experienceTitles.push(exp.jobTitle)
+      }
+
+      // Compute approximate years of experience
+      let totalMonths = 0
+      for (const exp of experiences) {
+        const start = exp.startDate ? new Date(exp.startDate) : null
+        const end = exp.currentlyWorking ? new Date() : exp.endDate ? new Date(exp.endDate) : null
+        if (start && end) {
+          totalMonths += Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 30))
+        }
+      }
+      const yearsOfExperience = Math.round(totalMonths / 12)
+
+      // Build primary query: focus on desired role titles first
+      const primaryRole = roles[0] || experienceTitles[0] || "Software Engineer"
       
-      setSearchQuery(preferredRole)
+      // Combine: primary role + experience titles + top skills for relevance
+      const queryParts = [primaryRole]
+      // Add similar role titles from experience
+      for (const title of experienceTitles) {
+        if (title.toLowerCase() !== primaryRole.toLowerCase()) {
+          queryParts.push(title)
+        }
+      }
+      // Add experience level hint
+      if (yearsOfExperience > 0) {
+        if (yearsOfExperience >= 8) queryParts.push("senior staff lead")
+        else if (yearsOfExperience >= 5) queryParts.push("senior")
+        else if (yearsOfExperience >= 2) queryParts.push("mid-level")
+        else queryParts.push("junior entry-level")
+      }
+      // Add top skills for better matching
+      if (skills.length > 0) {
+        queryParts.push(...skills.slice(0, 3))
+      }
+
+      const richQuery = queryParts.join(" ")
+
+      // Search silently — don't populate the search bar
+      // Search silently — don't populate the search bar
       searchMutation.mutate({ 
-        query: preferredRole, 
-        location: preferredLoc,
-        limit: 20 
+        query: richQuery, 
+        location: user.preferred_location || undefined,
+        remote_only: user.open_to_remote ?? false,
+        limit: 40 
+      }, {
+        onError: (err: any) => {
+          const isApiLimit = err.status === 401 || err.status === 402 || err.status === 429;
+          toast.error(err.message || "Failed to search jobs", {
+            duration: isApiLimit ? 10000 : 4000,
+            style: isApiLimit ? { border: '1px solid #ff4444', backgroundColor: '#ff444410' } : undefined
+          });
+        }
       })
     }
-  }, [isLoading, jobsList, user])
+  }, [isLoading, user])
+
+  // NOTE: AI scoring is done on-demand when the user opens a job detail page.
+  // This saves API quota and prevents rate limiting on the discovery feed.
 
   const handleSearch = (e?: React.FormEvent) => {
     e?.preventDefault()
     if (searchQuery.trim()) {
+      setIsProfileSearch(false)
       searchMutation.mutate({ 
         query: searchQuery, 
-        limit: 20,
+        limit: 40,
         location: activeFilters.location?.[0] || undefined
+      }, {
+        onError: (err: any) => {
+          const isApiLimit = err.status === 401 || err.status === 402 || err.status === 429;
+          toast.error(err.message || "Failed to search jobs", {
+            duration: isApiLimit ? 10000 : 4000,
+            style: isApiLimit ? { border: '1px solid #ff4444', backgroundColor: '#ff444410' } : undefined
+          });
+        }
       })
     }
   }
@@ -460,8 +532,20 @@ export function DiscoveryFeed() {
       {/* Job Cards */}
       <div className="space-y-4">
         {isSearching && sortedJobs.length === 0 && (
-          <div className="p-12 text-center text-muted-foreground animate-pulse">
-            Searching for "{searchQuery}" across top job portals...
+          <div className="p-12 text-center animate-pulse">
+            <div className="flex flex-col items-center gap-3">
+              <Sparkles className="w-8 h-8 text-primary animate-pulse" />
+              <p className="text-muted-foreground text-lg">
+                {isProfileSearch 
+                  ? "Matching jobs to your profile preferences..." 
+                  : `Searching for "${searchQuery}" across top job portals...`}
+              </p>
+              {isProfileSearch && (
+                <p className="text-sm text-muted-foreground/60">
+                  Based on your desired roles, skills, and experience
+                </p>
+              )}
+            </div>
           </div>
         )}
         
@@ -588,7 +672,19 @@ export function DiscoveryFeed() {
 
               {/* Match Score Sidebar */}
               <div className="w-48 bg-gradient-to-b from-[#0a3d3d] to-[#0a2828] p-6 flex flex-col items-center justify-center border-l border-primary/20">
-                <MatchScoreGauge score={job.match_score || 0} size="sm" />
+                {job.match_score ? (
+                  <MatchScoreGauge 
+                    score={job.match_score} 
+                    size="sm" 
+                  />
+                ) : (
+                  <div className="flex flex-col items-center gap-2 text-center">
+                    <div className="w-16 h-16 rounded-full border-2 border-dashed border-primary/30 flex items-center justify-center">
+                      <Sparkles className="w-6 h-6 text-primary/40" />
+                    </div>
+                    <span className="text-[10px] text-muted-foreground/60 leading-tight">Click to<br/>analyze fit</span>
+                  </div>
+                )}
                 {job.no_h1b && (
                   <Badge variant="outline" className="mt-3 border-muted-foreground/30 text-muted-foreground text-xs">
                     No H1B

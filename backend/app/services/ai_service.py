@@ -1,7 +1,7 @@
 """
 AI Service — all AI API calls in one place.
-Supports both Claude (Anthropic) and Gemini (Google) as providers.
-Set AI_PROVIDER in .env to "claude" or "gemini" to switch.
+Supports Claude (Anthropic), Gemini (Google), and DeepSeek as providers.
+Set AI_PROVIDER in .env to "claude", "gemini", or "deepseek" to switch.
 """
 import json
 import re
@@ -9,14 +9,16 @@ from app.core.config import settings
 
 # ── Provider setup ───────────────────────────────────────────────────────────
 
-_provider = settings.AI_PROVIDER  # "claude" or "gemini"
+_provider = settings.AI_PROVIDER  # "claude", "gemini", or "deepseek"
 
 # Lazy-init: clients are created on first call, not at import time.
 # This avoids crashes if the unused provider's SDK isn't installed.
 _claude_client = None
 _gemini_client = None
-_CLAUDE_MODEL = "claude-sonnet-4-20250514"
+_deepseek_client = None
+_CLAUDE_MODEL = "claude-3-5-sonnet-20240620"
 _GEMINI_MODEL = "gemini-3-flash-preview"
+_DEEPSEEK_MODEL = "deepseek-chat"
 
 
 def _get_claude():
@@ -40,35 +42,116 @@ def _get_gemini():
     return _gemini_client
 
 
+def _get_deepseek():
+    global _deepseek_client
+    if _deepseek_client is None:
+        try:
+            from openai import OpenAI
+        except ImportError:
+            raise ImportError(
+                "openai is not installed. Run: pip install openai"
+            )
+        _deepseek_client = OpenAI(
+            api_key=settings.DEEPSEEK_API_KEY,
+            base_url="https://api.deepseek.com",
+        )
+    return _deepseek_client
+
+
 # ── Low-level helpers ────────────────────────────────────────────────────────
 
 def _ask(system: str, user: str, max_tokens: int = 2000) -> str:
     """Send a single prompt to the configured AI provider and return text."""
-    if _provider == "claude":
-        msg = _get_claude().messages.create(
-            model=_CLAUDE_MODEL,
-            max_tokens=max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        )
-        return msg.content[0].text
+    import time
+    max_retries = 3
+    retry_delay = 2
 
-    else:  # gemini
-        response = _get_gemini().models.generate_content(
-            model=_GEMINI_MODEL,
-            contents=f"{system}\n\n{user}",
-            config={
-                "max_output_tokens": max_tokens,
-                "temperature": 0.3,
-            },
-        )
-        return response.text
+    for attempt in range(max_retries):
+        try:
+            if _provider == "claude":
+                msg = _get_claude().messages.create(
+                    model=_CLAUDE_MODEL,
+                    max_tokens=max_tokens,
+                    system=system,
+                    messages=[{"role": "user", "content": user}],
+                )
+                return msg.content[0].text
+
+            elif _provider == "deepseek":
+                response = _get_deepseek().chat.completions.create(
+                    model=_DEEPSEEK_MODEL,
+                    max_tokens=max_tokens,
+                    temperature=0.3,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                )
+                return response.choices[0].message.content
+
+            else:  # gemini
+                response = _get_gemini().models.generate_content(
+                    model=_GEMINI_MODEL,
+                    contents=f"{system}\n\n{user}",
+                    config={
+                        "max_output_tokens": max_tokens,
+                        "temperature": 0.3,
+                    },
+                )
+                # Check for block
+                if not response.text:
+                     raise ValueError("AI response was blocked by safety filters.")
+                return response.text
+        except Exception as e:
+            err_str = str(e).lower()
+            
+            # Auth errors (invalid API key)
+            if "401" in err_str or "unauthorized" in err_str or "invalid_api_key" in err_str or "authentication" in err_str:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=401, detail=f"AI API Key is invalid or unauthorized ({_provider}). Please check your settings.")
+
+            # Quota errors (out of credits)
+            if "402" in err_str or "insufficient_quota" in err_str or "billing" in err_str or "out of credit" in err_str:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=402, detail=f"AI API Key has run out of credits/quota ({_provider}).")
+
+            # Rate limits (too many requests in a short time)
+            if "429" in err_str or "resource_exhausted" in err_str or "quota" in err_str:
+                if attempt < max_retries - 1:
+                    print(f"Rate limit hit, retrying in {retry_delay}s... (Attempt {attempt+1})")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                    continue
+                else:
+                    from fastapi import HTTPException
+                    raise HTTPException(status_code=429, detail=f"AI provider rate limit exceeded after retries ({_provider}).")
+            
+            print(f"AI Provider Error ({_provider}): {e}")
+            
+            # If it's already an HTTPException, raise it directly
+            if e.__class__.__name__ == "HTTPException":
+                raise e
+                
+            raise e
+    
+    from fastapi import HTTPException
+    raise HTTPException(status_code=429, detail="AI provider rate limit exceeded after retries.")
 
 
 def _parse_json(text: str) -> dict:
-    """Strip markdown fences and parse JSON safely."""
-    clean = re.sub(r"```(?:json)?|```", "", text).strip()
-    return json.loads(clean)
+    """Extract and parse JSON from text, even if it has preamble/postamble."""
+    try:
+        # Find first { and last }
+        start = text.find('{')
+        end = text.rfind('}')
+        if start == -1 or end == -1:
+            raise ValueError("No JSON object found in response")
+        
+        clean = text[start:end+1]
+        return json.loads(clean)
+    except Exception as e:
+        print(f"JSON Parse Error: {e}\nRaw Text: {text}")
+        raise e
 
 
 # ── 1. Full Job Analysis ─────────────────────────────────────────────────────
@@ -141,17 +224,30 @@ def score_ats(cv_text: str, job_description: str) -> dict:
 {cv_text}
 
 Return JSON:
-{{
-  "ats_score": <integer 0-100>,
-  "keyword_coverage": <integer 0-100>,
-  "formatting_score": <integer 0-100>,
-  "missing_keywords": ["kw1", ...],
-  "formatting_issues": ["issue1", ...],
-  "quick_wins": ["<specific fix that takes <5 min>", ...]
-}}
+Return JSON: {"ats_score": 0-100, "issues": ["issue1", ...]}
 """
     raw = _ask(system, user, max_tokens=1000)
     return _parse_json(raw)
+
+
+def quick_score(cv_text: str, job_description: str) -> dict:
+    """Ultra-fast scoring for the Discovery Feed."""
+    system = "You are a recruiter. Respond ONLY with valid JSON. No text before or after."
+    user = f"""
+Evaluate the fit (0-100) between this CV and Job.
+Return JSON: {{"match_score": <int>}}
+
+CV: {cv_text[:1500]}
+JD: {job_description[:1500]}
+"""
+    raw = _ask(system, user, max_tokens=100)
+    return _parse_json(raw)
+
+
+async def async_quick_score(cv_text: str, job_description: str) -> dict:
+    """Async version of quick_score for batch processing."""
+    import asyncio
+    return await asyncio.to_thread(quick_score, cv_text, job_description)
 
 
 # ── 3. Fix CV for a Specific Job ─────────────────────────────────────────────
@@ -159,7 +255,7 @@ Return JSON:
 def fix_cv(cv_text: str, job_description: str, job_title: str) -> dict:
     """
     Rewrite the CV to better match the job.
-    Returns the fixed text + a list of changes made.
+    Returns the fixed text + detailed section-level changes.
     """
     system = (
         "You are a professional CV writer and ATS expert. "
@@ -177,15 +273,23 @@ Target Role: {job_title}
 --- ORIGINAL CV ---
 {cv_text}
 
-Return JSON:
+Return JSON with this exact structure:
 {{
   "fixed_cv_text": "<the full rewritten CV as plain text>",
-  "changes_made": [
-    "<specific change 1>",
-    "<specific change 2>",
-    ...
+  "changes": [
+    {{
+      "section": "<which CV section was changed: Summary, Skills, Experience, Education, etc.>",
+      "before": "<the original text from that section (brief excerpt)>",
+      "after": "<the improved text for that section (brief excerpt)>",
+      "reason": "<why this change improves the CV for this specific role>"
+    }}
   ],
-  "ats_improvement": "<brief explanation of how ATS score improved>"
+  "quick_wins": [
+    "<actionable suggestion 1 the candidate can do manually>",
+    "<actionable suggestion 2>",
+    "<actionable suggestion 3>"
+  ],
+  "ats_improvement": "<explain how the ATS score improved, e.g. 'Estimated ATS score improved from ~55 to ~82 by adding 8 missing keywords and restructuring bullet points.'>"
 }}
 """
     raw = _ask(system, user, max_tokens=4000)
@@ -206,19 +310,45 @@ def generate_cover_letter(
     job_title: str,
     company: str,
     tone: str = "professional",
+    user_name: str = "",
+    user_email: str = "",
+    user_phone: str = "",
+    user_city: str = "",
+    user_country: str = "",
 ) -> str:
-    """Returns a ready-to-send cover letter as plain text."""
+    """Returns a ready-to-send cover letter as plain text with professional structure."""
+    from datetime import date
     tone_instruction = TONE_INSTRUCTIONS.get(tone, TONE_INSTRUCTIONS["professional"])
+    today = date.today().strftime("%B %d, %Y")
+
+    # Build contact info block for the AI
+    contact_parts = []
+    if user_name:
+        contact_parts.append(f"Full Name: {user_name}")
+    if user_phone:
+        contact_parts.append(f"Phone: {user_phone}")
+    if user_email:
+        contact_parts.append(f"Email: {user_email}")
+    if user_city or user_country:
+        location = ", ".join(filter(None, [user_city, user_country]))
+        contact_parts.append(f"Location: {location}")
+    contact_parts.append(f"Date: {today}")
+    contact_info = "\n".join(contact_parts)
 
     system = (
-        f"You are a professional cover letter writer. "
+        f"You are an expert executive cover letter writer. "
         f"Tone: {tone_instruction}. "
-        "Write a compelling cover letter that connects the candidate's experience "
-        "to the specific role requirements. Avoid generic phrases like 'I am writing to apply'. "
-        "Return only the cover letter text — no JSON, no commentary."
+        "Your MOST IMPORTANT rule: the cover letter must be about the CANDIDATE's concrete achievements. "
+        "Do NOT write generic filler about the company's mission or industry standing. "
+        "Return ONLY the final cover letter text. Do not include markdown formatting like ```text or ```markdown. "
+        "Do not include commentary, notes, or placeholders. Do not repeat information."
     )
     user = f"""
-Role: {job_title} at {company}
+Role: {job_title}
+Company: {company}
+
+--- CANDIDATE CONTACT INFO ---
+{contact_info}
 
 --- JOB DESCRIPTION ---
 {job_description}
@@ -226,9 +356,46 @@ Role: {job_title} at {company}
 --- CANDIDATE CV ---
 {cv_text}
 
+Write a professional cover letter following this EXACT structure. Do NOT include section titles or numbers in your output. Just write the letter naturally.
+
+[Header Section]
+Candidate's full name
+Candidate's phone number
+Candidate's email
+Candidate's location (city/state)
+
+{today}
+
+Hiring Manager
+{company}
+
+[Salutation]
+Dear Hiring Manager,
+
+[Opening Paragraph (3-4 sentences)]
+State the candidate's name and the position being applied for. Mention relevant experience and enthusiasm for the role. Focus on responsibilities and accomplishments from the CV.
+
+[Skills Alignment Paragraph (3-4 sentences)]
+Outline how the candidate's skills align with the position requirements. Mention specific programming languages, frameworks, and technologies from the CV that match the job description. Highlight projects worked on to demonstrate technical versatility.
+
+[Conclusion Paragraph (2-3 sentences)]
+Summarize key points reinforcing why the candidate is qualified. Include a call to action indicating eagerness to discuss the opportunity further.
+
+[Sign-off]
+Sincerely,
+
+[Candidate's full name]
+
+CRITICAL RULES:
+1. EVERY paragraph must reference concrete facts, skills, or achievements strictly from the provided CV.
+2. DO NOT fabricate any skills, experience, or metrics that are not in the CV.
+3. DO NOT repeat the header or contact information anywhere else in the letter.
+4. Ensure the letter is COMPLETE. Do not cut off the text. Finish the letter with the sign-off and the candidate's name.
+5. Keep total length between 300-450 words.
+
 Write the cover letter now:
-"""
-    return _ask(system, user, max_tokens=1000)
+"""  
+    return _ask(system, user, max_tokens=2500)
 
 
 # ── 5. Extract Profile from CV ───────────────────────────────────────────────

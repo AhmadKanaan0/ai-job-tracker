@@ -202,10 +202,13 @@ export function ApplicationTracker() {
     )
   }
 
-  const statusCounts = {
-    all: applications.length,
-    ...allStatuses.reduce((acc, s) => ({ ...acc, [s]: applications.filter(a => a.status === s).length }), {} as Record<string, number>)
-  }
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: applications.length }
+    allStatuses.forEach(s => {
+      counts[s] = applications.filter(a => a.status === s).length
+    })
+    return counts
+  }, [applications])
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) return <ArrowUpDown className="w-4 h-4 ml-1 text-muted-foreground/50" />

@@ -5,9 +5,10 @@ import React from "react"
 interface MatchGaugeProps {
   score: number;
   size?: "sm" | "md" | "lg";
+  isAnalyzing?: boolean;
 }
 
-export function MatchScoreGauge({ score, size = "md" }: MatchGaugeProps) {
+export function MatchScoreGauge({ score, size = "md", isAnalyzing = false }: MatchGaugeProps) {
   const radius = size === "lg" ? 50 : size === "sm" ? 36 : 40;
   const dimension = size === "lg" ? 120 : size === "sm" ? 80 : 90;
   const circumference = 2 * Math.PI * radius;
@@ -52,19 +53,26 @@ export function MatchScoreGauge({ score, size = "md" }: MatchGaugeProps) {
           />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span 
-            className={`font-bold font-mono ${size === "lg" ? "text-3xl" : size === "sm" ? "text-xl" : "text-2xl"}`}
-            style={{ color: "var(--foreground)" }}
-          >
-            {score}<span className="text-sm text-muted-foreground">%</span>
-          </span>
+          {isAnalyzing ? (
+            <div className="flex flex-col items-center">
+              <span className="text-[10px] font-bold text-primary animate-pulse">SCANNING</span>
+              <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin mt-1" />
+            </div>
+          ) : (
+            <span 
+              className={`font-bold font-mono ${size === "lg" ? "text-3xl" : size === "sm" ? "text-xl" : "text-2xl"}`}
+              style={{ color: "var(--foreground)" }}
+            >
+              {score}<span className="text-sm text-muted-foreground">%</span>
+            </span>
+          )}
         </div>
       </div>
       <span 
         className={`font-semibold mt-3 tracking-wider ${size === "lg" ? "text-sm" : "text-xs"}`}
-        style={{ color: getColor() }}
+        style={{ color: isAnalyzing ? "var(--primary)" : getColor() }}
       >
-        {getLabel()}
+        {isAnalyzing ? "ANALYSING FIT..." : getLabel()}
       </span>
     </div>
   );

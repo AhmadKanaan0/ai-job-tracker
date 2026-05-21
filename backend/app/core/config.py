@@ -11,9 +11,10 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://postgres:haru@localhost:5432/jobhunt"
 
     # ── AI Provider ─────────────────────────────────────────
-    AI_PROVIDER: Literal["claude", "gemini"] = "claude"  # switch between providers
+    AI_PROVIDER: Literal["claude", "gemini", "deepseek"] = "claude"  # switch between providers
     ANTHROPIC_API_KEY: str = ""
     GOOGLE_API_KEY: str = ""
+    DEEPSEEK_API_KEY: str = ""
 
     REDIS_URL: str = "redis://localhost:6379/0"
 

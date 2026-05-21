@@ -17,7 +17,8 @@ export function OnboardingAuth() {
   const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [fullName, setFullName] = useState("")
+  const [firstName, setFirstName] = useState("")
+  const [lastName, setLastName] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isMounted, setIsMounted] = useState(false)
@@ -30,7 +31,7 @@ export function OnboardingAuth() {
 
     try {
       if (isSignUp) {
-        await register({ email, password, full_name: fullName || undefined })
+        await register({ email, password, first_name: firstName || undefined, last_name: lastName || undefined })
         // After signup, always go to onboarding for first CV upload
         router.push("/onboarding")
       } else {
@@ -116,16 +117,29 @@ export function OnboardingAuth() {
           {/* Email/Password Form */}
           <div className="space-y-4">
             {isSignUp && (
-              <div className="space-y-2">
-                <Label className="text-foreground">Full Name</Label>
-                <Input 
-                  type="text"
-                  placeholder="John Doe"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="bg-muted/50 border-border/50 h-11"
-                  disabled={isLoading}
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-foreground">First Name</Label>
+                  <Input 
+                    type="text"
+                    placeholder="John"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    className="bg-muted/50 border-border/50 h-11"
+                    disabled={isLoading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-foreground">Last Name</Label>
+                  <Input 
+                    type="text"
+                    placeholder="Doe"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    className="bg-muted/50 border-border/50 h-11"
+                    disabled={isLoading}
+                  />
+                </div>
               </div>
             )}
 

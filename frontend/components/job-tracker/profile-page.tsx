@@ -45,7 +45,8 @@ import {
   Phone,
   Hash,
   Home,
-  CheckCircle2
+  CheckCircle2,
+  Target
 } from "lucide-react"
 
 import { useForm, useFieldArray } from "react-hook-form"
@@ -98,6 +99,14 @@ const techStacks = [
   "OpenAI", "NLP", "Computer Vision", "PyTorch", "TensorFlow", "Pandas", "NumPy", "Scikit-Learn", "FastAPI", "Django", "Flask"
 ]
 
+const commonRoles = [
+  "Frontend Engineer", "Backend Engineer", "Full Stack Engineer", "Software Engineer", 
+  "Product Manager", "UI/UX Designer", "Data Scientist", "DevOps Engineer", 
+  "Mobile Developer", "iOS Developer", "Android Developer", "QA Engineer", 
+  "Engineering Manager", "Technical Lead", "Security Engineer", "Cloud Architect",
+  "Machine Learning Engineer", "AI Researcher", "Data Analyst", "Product Designer"
+]
+
 export function ProfilePage() {
   const { user, updateProfile, isLoading: isAuthLoading } = useAuth()
   const [activeTab, setActiveTab] = useState("personal")
@@ -121,6 +130,13 @@ export function ProfilePage() {
     .filter(skill => 
       skill.toLowerCase().includes(skillSearch.toLowerCase()) && 
       !skills.includes(skill)
+    )
+    .slice(0, 5)
+
+  const filteredRoles = commonRoles
+    .filter(role => 
+      role.toLowerCase().includes(roleInput.toLowerCase()) && 
+      !desiredRoles.includes(role)
     )
     .slice(0, 5)
   
@@ -501,7 +517,7 @@ export function ProfilePage() {
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 text-muted-foreground text-sm font-medium">
                     <User className="w-4 h-4" />
-                    Full Name
+                    Name
                   </div>
                   <p className="text-xl font-semibold text-foreground">{personal.firstName} {personal.lastName}</p>
                 </div>
@@ -901,35 +917,90 @@ export function ProfilePage() {
                         </Badge>
                       ))}
                     </div>
-                    <div className="flex gap-2">
-                      <Input 
-                        placeholder="e.g. Full Stack Developer"
-                        value={roleInput}
-                        onChange={(e) => setRoleInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && roleInput.trim()) {
-                            if (!desiredRoles.includes(roleInput.trim())) {
+                    <div className="relative group">
+                      <div className="flex gap-2">
+                        <Input 
+                          placeholder="e.g. Full Stack Developer"
+                          value={roleInput}
+                          onChange={(e) => setRoleInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && roleInput.trim()) {
+                              if (!desiredRoles.includes(roleInput.trim())) {
+                                setDesiredRoles([...desiredRoles, roleInput.trim()])
+                                setHasChanges(true)
+                              }
+                              setRoleInput("")
+                            }
+                          }}
+                          className="bg-muted/30 border-border/50 h-12 rounded-xl"
+                        />
+                        <Button 
+                          variant="outline"
+                          onClick={() => {
+                            if (roleInput.trim() && !desiredRoles.includes(roleInput.trim())) {
                               setDesiredRoles([...desiredRoles, roleInput.trim()])
                               setHasChanges(true)
+                              setRoleInput("")
                             }
-                            setRoleInput("")
-                          }
-                        }}
-                        className="bg-muted/30 border-border/50 h-12 rounded-xl"
-                      />
-                      <Button 
-                        variant="outline"
-                        onClick={() => {
-                          if (roleInput.trim() && !desiredRoles.includes(roleInput.trim())) {
-                            setDesiredRoles([...desiredRoles, roleInput.trim()])
-                            setHasChanges(true)
-                            setRoleInput("")
-                          }
-                        }}
-                        className="border-border/50 h-12 px-4 rounded-xl"
-                      >
-                        Add
-                      </Button>
+                          }}
+                          className="border-border/50 h-12 px-4 rounded-xl"
+                        >
+                          Add
+                        </Button>
+                      </div>
+
+                      {/* Role Suggestions Dropdown */}
+                      {roleInput && filteredRoles.length > 0 && (
+                        <div className="absolute top-full left-0 w-full mt-2 bg-background/95 backdrop-blur-xl border border-border/50 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                          <div className="p-2 flex flex-col gap-1">
+                            {filteredRoles.map(role => (
+                              <button
+                                key={role}
+                                type="button"
+                                onClick={() => {
+                                  if (!desiredRoles.includes(role)) {
+                                    setDesiredRoles([...desiredRoles, role])
+                                    setHasChanges(true)
+                                  }
+                                  setRoleInput("")
+                                }}
+                                className="flex items-center gap-3 px-4 py-3 hover:bg-primary/10 rounded-xl transition-all text-left group/item"
+                              >
+                                <div className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center group-hover/item:bg-primary/20 transition-colors">
+                                  <Plus className="w-4 h-4 text-muted-foreground group-hover/item:text-primary" />
+                                </div>
+                                <span className="font-medium">{role}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <Label className="text-sm font-bold text-muted-foreground tracking-widest uppercase flex items-center gap-2 ml-1">
+                      <Sparkles className="w-4 h-4 text-primary" />
+                      Suggested roles
+                    </Label>
+                    <div className="flex flex-wrap gap-2">
+                      {commonRoles
+                        .filter(role => !desiredRoles.includes(role))
+                        .slice(0, 8)
+                        .map(role => (
+                          <Badge 
+                            key={role} 
+                            variant="outline" 
+                            className="bg-muted/5 border-border/50 hover:bg-primary/10 hover:border-primary/30 cursor-pointer px-4 py-2 rounded-xl transition-all font-medium text-sm"
+                            onClick={() => {
+                              setDesiredRoles([...desiredRoles, role])
+                              setHasChanges(true)
+                            }}
+                          >
+                            <Plus className="w-3 h-3 mr-2 text-primary" />
+                            {role}
+                          </Badge>
+                        ))}
                     </div>
                   </div>
 

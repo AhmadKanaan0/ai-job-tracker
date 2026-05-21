@@ -31,6 +31,112 @@ HEADERS = {
     )
 }
 
+# ── Playwright Fallback (Level 1) ────────────────────────────────────────────
+
+async def _scrape_with_playwright(url: str) -> str:
+    """Uses Playwright to render JS and extract text from complex SPAs."""
+    from playwright.async_api import async_playwright
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        try:
+            await page.goto(url, wait_until="networkidle", timeout=20000)
+            # Remove noise
+            await page.evaluate('''() => {
+                const noise = document.querySelectorAll('nav, header, footer, script, style, svg');
+                noise.forEach(n => n.remove());
+            }''')
+            # Extract text from body
+            text = await page.locator("body").inner_text()
+            return text[:8000]
+        finally:
+            await browser.close()
+
+
+# ── Zero-Token Board Scanner (Level 2) ───────────────────────────────────────
+
+async def scan_company_board(company: str, ats_type: str = "auto") -> List[Dict]:
+    """
+    Fetches all active jobs for a given company via their JSON APIs.
+    ats_type can be 'greenhouse', 'ashby', 'lever', or 'auto' (will try to guess/bruteforce).
+    """
+    # Simple bruteforce if auto
+    types_to_try = [ats_type] if ats_type != "auto" else ["greenhouse", "ashby", "lever"]
+    
+    for t in types_to_try:
+        try:
+            if t == "greenhouse":
+                async with httpx.AsyncClient(timeout=15) as client:
+                    resp = await client.get(f"https://boards-api.greenhouse.io/v1/boards/{company}/jobs")
+                    if resp.status_code == 200:
+                        data = resp.json().get("jobs", [])
+                        return [{
+                            "title": j.get("title", ""),
+                            "company": company,
+                            "location": j.get("location", {}).get("name", "Unknown"),
+                            "remote": "remote" if "remote" in j.get("location", {}).get("name", "").lower() else None,
+                            "url": j.get("absolute_url", ""),
+                            "source": "greenhouse",
+                            "description": None,
+                            "tags": [],
+                            "salary_min": None,
+                            "salary_max": None,
+                            "salary_currency": None,
+                            "posted_at": None,
+                        } for j in data]
+            
+            elif t == "ashby":
+                async with httpx.AsyncClient(timeout=15) as client:
+                    resp = await client.get(f"https://api.ashbyhq.com/posting-api/job-board/{company}?includeCompensation=true")
+                    if resp.status_code == 200:
+                        data = resp.json().get("jobs", [])
+                        return [{
+                            "title": j.get("title", ""),
+                            "company": company,
+                            "location": j.get("location", "Unknown"),
+                            "remote": "remote" if "remote" in j.get("location", "").lower() else None,
+                            "url": j.get("jobUrl", ""),
+                            "source": "ashby",
+                            "description": None,
+                            "tags": [],
+                            "salary_min": None,
+                            "salary_max": None,
+                            "salary_currency": None,
+                            "posted_at": None,
+                        } for j in data]
+            
+            elif t == "lever":
+                async with httpx.AsyncClient(timeout=15) as client:
+                    resp = await client.get(f"https://api.lever.co/v0/postings/{company}")
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        return [{
+                            "title": j.get("text", ""),
+                            "company": company,
+                            "location": j.get("categories", {}).get("location", "Unknown"),
+                            "remote": "remote" if "remote" in j.get("categories", {}).get("location", "").lower() else None,
+                            "url": j.get("hostedUrl", ""),
+                            "source": "lever",
+                            "description": None,
+                            "tags": [],
+                            "salary_min": None,
+                            "salary_max": None,
+                            "salary_currency": None,
+                            "posted_at": _parse_date(j.get("createdAt")),
+                        } for j in data]
+        except Exception:
+            continue
+
+    return []
+
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    )
+}
+
 
 # ── Master search entry point ────────────────────────────────────────────────
 
@@ -39,13 +145,17 @@ async def search_jobs(
     location: Optional[str] = None,
     remote_only: bool = False,
     sources: Optional[List[str]] = None,
-    limit: int = 20,
+    limit: int = 50,
 ) -> List[Dict]:
     """
     Search across all (or selected) portals and return a merged list.
     Each result is a dict matching the Job model fields.
     """
-    all_sources = sources or ["weworkremotely", "remotive", "remoteok", "himalayas"]
+    default_sources = ["weworkremotely", "remotive", "remoteok", "himalayas"]
+    # Auto-include LinkedIn/Indeed and ATS WebSearch when JSearch key is available
+    if settings.JSEARCH_API_KEY:
+        default_sources.extend(["linkedin", "indeed", "websearch"])
+    all_sources = sources or default_sources
 
     tasks = []
     for source in all_sources:
@@ -57,7 +167,7 @@ async def search_jobs(
             tasks.append(_fetch_remoteok(query))
         elif source == "himalayas":
             tasks.append(_fetch_himalayas(query))
-        elif source in ("linkedin", "indeed") and settings.JSEARCH_API_KEY:
+        elif source in ("linkedin", "indeed", "websearch") and settings.JSEARCH_API_KEY:
             tasks.append(_fetch_jsearch(query, location, source))
 
     results_nested = await asyncio.gather(*tasks, return_exceptions=True)
@@ -65,7 +175,19 @@ async def search_jobs(
     jobs = []
     for r in results_nested:
         if isinstance(r, Exception):
-            continue   # skip failed sources silently
+            # If it's an HTTP error from an external API (like RapidAPI/JSearch)
+            if hasattr(r, "response"):
+                status_code = getattr(r.response, "status_code", 0)
+                if status_code in (401, 403):
+                    from fastapi import HTTPException
+                    raise HTTPException(status_code=401, detail="External API Key (JSearch/RapidAPI) is invalid or unauthorized. Please check your settings.")
+                elif status_code == 429:
+                    from fastapi import HTTPException
+                    raise HTTPException(status_code=429, detail="External API rate limit exceeded (JSearch/RapidAPI).")
+                elif status_code == 402:
+                    from fastapi import HTTPException
+                    raise HTTPException(status_code=402, detail="External API quota exceeded (JSearch/RapidAPI).")
+            continue   # skip other failed sources silently
         jobs.extend(r)
 
     # Deduplicate by URL
@@ -175,7 +297,7 @@ async def _fetch_remotive(query: str) -> List[Dict]:
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.get(
             "https://remotive.com/api/remote-jobs",
-            params={"search": query, "limit": 20},
+            params={"search": query, "limit": 30},
         )
         resp.raise_for_status()
 
@@ -229,7 +351,7 @@ async def _fetch_remoteok(query: str) -> List[Dict]:
             "salary_currency": "USD",
             "posted_at": _parse_date(j.get("date")),
         })
-    return jobs[:20]
+    return jobs[:30]
 
 
 # ── Himalayas (JSON API) ─────────────────────────────────────────────────────
@@ -238,7 +360,7 @@ async def _fetch_himalayas(query: str) -> List[Dict]:
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.get(
             "https://himalayas.app/jobs/api",
-            params={"q": query, "limit": 20},
+            params={"q": query, "limit": 30},
         )
         resp.raise_for_status()
 
@@ -272,9 +394,13 @@ async def _fetch_jsearch(query: str, location: Optional[str], source: str) -> Li
     if not settings.JSEARCH_API_KEY:
         return []
 
-    search_query = f"{query} on {source}"
-    if location:
-        search_query += f" in {location}"
+    if source == "websearch":
+        # Level 3 WebSearch discovery for ATS boards
+        search_query = f"{query} (site:boards.greenhouse.io OR site:jobs.lever.co OR site:jobs.ashbyhq.com)"
+    else:
+        search_query = f"{query} on {source}"
+        if location:
+            search_query += f" in {location}"
 
     async with httpx.AsyncClient(timeout=20) as client:
         resp = await client.get(
@@ -310,29 +436,34 @@ async def _fetch_jsearch(query: str, location: Optional[str], source: str) -> Li
 # ── Greenhouse job detail ────────────────────────────────────────────────────
 
 async def _scrape_greenhouse_job(url: str) -> Dict:
-    async with httpx.AsyncClient(headers=HEADERS, timeout=15) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-
-    soup = BeautifulSoup(resp.text, "html.parser")
-    title = soup.select_one("h1.app-title") or soup.select_one("h1")
-    company_tag = soup.select_one(".company-name") or soup.select_one("h2")
-    content = soup.select_one("#content") or soup.select_one(".job-post")
-
-    return {
-        "title": title.get_text(strip=True) if title else "Unknown",
-        "company": company_tag.get_text(strip=True) if company_tag else "Unknown",
-        "location": None,
-        "remote": None,
-        "url": url,
-        "source": "greenhouse",
-        "description": content.get_text("\n", strip=True) if content else None,
-        "tags": [],
-        "salary_min": None,
-        "salary_max": None,
-        "salary_currency": None,
-        "posted_at": None,
-    }
+    # URL is usually https://boards.greenhouse.io/company/jobs/id
+    try:
+        parts = url.rstrip("/").split("/")
+        job_id = parts[-1]
+        company = parts[-3] if parts[-2] == "jobs" else parts[-2]
+        
+        api_url = f"https://boards-api.greenhouse.io/v1/boards/{company}/jobs/{job_id}"
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(api_url)
+            resp.raise_for_status()
+        j = resp.json()
+        description = BeautifulSoup(j.get("content", ""), "html.parser").get_text("\n")
+        return {
+            "title": j.get("title", "Unknown"),
+            "company": company,
+            "location": j.get("location", {}).get("name", "Unknown"),
+            "remote": "remote" if "remote" in j.get("location", {}).get("name", "").lower() else None,
+            "url": j.get("absolute_url", url),
+            "source": "greenhouse",
+            "description": description,
+            "tags": [],
+            "salary_min": None,
+            "salary_max": None,
+            "salary_currency": None,
+            "posted_at": None,
+        }
+    except Exception:
+        return await _scrape_generic(url)
 
 
 # ── Lever job detail ─────────────────────────────────────────────────────────
@@ -372,50 +503,75 @@ async def _scrape_lever_job(url: str) -> Dict:
 # ── Ashby job detail ─────────────────────────────────────────────────────────
 
 async def _scrape_ashby_job(url: str) -> Dict:
-    async with httpx.AsyncClient(headers=HEADERS, timeout=15) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-
-    soup = BeautifulSoup(resp.text, "html.parser")
-    title = soup.select_one("h1")
-    description_div = soup.select_one(".ashby-job-posting-brief-description") or soup.select_one("main")
-
-    return {
-        "title": title.get_text(strip=True) if title else "Unknown",
-        "company": url.split("/")[3] if len(url.split("/")) > 3 else "Unknown",
-        "location": None,
-        "remote": None,
-        "url": url,
-        "source": "ashby",
-        "description": description_div.get_text("\n", strip=True) if description_div else None,
-        "tags": [],
-        "salary_min": None,
-        "salary_max": None,
-        "salary_currency": None,
-        "posted_at": None,
-    }
+    # url e.g. https://jobs.ashbyhq.com/company/id
+    try:
+        parts = url.rstrip("/").split("/")
+        job_id = parts[-1]
+        company = parts[-2]
+        
+        # Fetch the entire board to find the job (Ashby doesn't have an unauth GET for a single job)
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(f"https://api.ashbyhq.com/posting-api/job-board/{company}?includeCompensation=true")
+            resp.raise_for_status()
+            
+        jobs = resp.json().get("jobs", [])
+        for j in jobs:
+            if j.get("id") == job_id or str(job_id) in j.get("jobUrl", ""):
+                desc_html = j.get("descriptionHtml", "")
+                description = BeautifulSoup(desc_html, "html.parser").get_text("\n") if desc_html else None
+                return {
+                    "title": j.get("title", "Unknown"),
+                    "company": company,
+                    "location": j.get("location", "Unknown"),
+                    "remote": "remote" if "remote" in j.get("location", "").lower() else None,
+                    "url": j.get("jobUrl", url),
+                    "source": "ashby",
+                    "description": description,
+                    "tags": [],
+                    "salary_min": None,
+                    "salary_max": None,
+                    "salary_currency": None,
+                    "posted_at": None,
+                }
+    except Exception:
+        pass
+        
+    return await _scrape_generic(url)
 
 
 # ── Generic fallback ─────────────────────────────────────────────────────────
 
 async def _scrape_generic(url: str) -> Dict:
-    """Best-effort scrape of any job URL."""
-    async with httpx.AsyncClient(headers=HEADERS, timeout=15, follow_redirects=True) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
+    """Best-effort scrape of any job URL. Tries simple HTML, then Playwright."""
+    try:
+        async with httpx.AsyncClient(headers=HEADERS, timeout=10, follow_redirects=True) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
 
-    soup = BeautifulSoup(resp.text, "html.parser")
+        soup = BeautifulSoup(resp.text, "html.parser")
+        title = (
+            soup.select_one("h1")
+            or soup.select_one('[class*="job-title"]')
+            or soup.select_one('[class*="position"]')
+        )
+        
+        # If it's a SPA with empty body or Workday, fallback to Playwright
+        content = soup.get_text()
+        if len(content) < 500 or "workdayjobs" in url:
+            raise ValueError("Too little content, probably SPA")
 
-    # Try to find title and description heuristically
-    title = (
-        soup.select_one("h1")
-        or soup.select_one('[class*="job-title"]')
-        or soup.select_one('[class*="position"]')
-    )
-    # Remove nav, header, footer noise
-    for tag in soup(["nav", "header", "footer", "script", "style"]):
-        tag.decompose()
-    description = soup.get_text("\n", strip=True)[:8000]  # cap at 8k chars
+        for tag in soup(["nav", "header", "footer", "script", "style"]):
+            tag.decompose()
+        description = soup.get_text("\n", strip=True)[:8000]
+        
+    except Exception:
+        # Fallback to Playwright (Level 1)
+        try:
+            description = await _scrape_with_playwright(url)
+            title = None
+        except Exception:
+            description = "Could not scrape job details."
+            title = None
 
     return {
         "title": title.get_text(strip=True) if title else "Unknown",

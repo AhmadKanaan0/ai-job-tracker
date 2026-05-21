@@ -56,7 +56,7 @@ class JobSearch(BaseModel):
     location: Optional[str] = None
     remote_only: bool = False
     sources: Optional[List[str]] = None   # ["linkedin", "weworkremotely", ...]
-    limit: int = 20
+    limit: int = 40
 
 
 # ── Tracker ──────────────────────────────────────────────────────────────────
@@ -154,3 +154,7 @@ class CoverLetterOut(BaseModel):
 
 class ScrapeRequest(BaseModel):
     url: str
+
+class ScanBoardRequest(BaseModel):
+    company: str
+    ats_type: str = "auto"
